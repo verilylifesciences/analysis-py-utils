@@ -16,6 +16,9 @@
 import datetime
 import time
 
+import logging
+from google.cloud.exceptions import ServiceUnavailable, InternalServerError
+
 # Bigquery uses . to separate project, dataset, and table parts.
 TABLE_PATH_DELIMITER = '.'
 
@@ -79,13 +82,17 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("create_table_from_query is not implemented.")
 
-    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None):
+    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None,
+                                replace_existing_tables=True):
         """Creates a set of tables from a dictionary of table names to their schemas.
 
         Args:
           table_names_to_schemas: A dictionary of:
             key: The table name.
             value: A list of SchemaField objects.
+          dataset_id: The dataset in which to create tables. If not specified, use default dataset.
+          replace_existing_tables: If True, delete and re-create tables. Otherwise, leave
+            pre-existing tables alone and only create those that don't yet exist.
         """
         raise NotImplementedError("create_tables_from_dict is not implemented.")
 
@@ -147,23 +154,24 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("get_datasets is not implemented.")
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=60):
+    def populate_table(self, table_path, columns, data=[], max_wait_sec=60, max_retries=1):
         """Create a table and populate it with a list of rows.
 
         Args:
-          table_path: A string of the form '<dataset id>.<table name>'.
-          columns: A list of pairs (<column name>, <value type>).
-          data: A list of rows, each of which is a list of values.
+            table_path: A string of the form '<dataset id>.<table name>'.
+            columns: A list of pairs (<column name>, <value type>).
+            data: A list of rows, each of which is a list of values.
+            max_wait_sec: The maximum number of seconds to wait for the table to be populated.
+            max_retries: The maximum number of times to retry each time max_wait_sec is reached.
         """
         raise NotImplementedError("populate_table is not implemented.")
 
-    def append_rows(self, table_path, data, columns=None, max_wait_sec=60):
+    def append_rows(self, table_path, data, columns=None):
         """Appends the rows contained in data to the table at table_path.
 
         Args:
           table_path: A string of the form '<dataset id>.<table name>'.
           data: A list of rows, each of which is a list of values.
-          max_wait_sec: The longest we should wait to insert the rows
           columns: Optionally, a list of pairs (<column name>, <value type>) to describe the
               table's expected schema. If this is present, it will check the table's schema against
               the provided schema.
@@ -333,3 +341,34 @@ def is_job_done(job, query=""):
             raise RuntimeError(msg)
         return True
     return False
+
+
+def execute_with_retries(fn_to_execute, max_retries=3):
+    """Execute the given function with the given number of retries.
+
+    Retry on common unpredictable BigQuery backend failures.
+
+    Args:
+        fn_to_execute: The function to execute with retries.
+        max_retries: The maximum number of retries.
+    Returns:
+        Return values of fn_to_execute
+    Raises:
+        RuntimeError: if max_retries is reached.
+    """
+    retries = 0
+    while retries < max_retries:
+        try:
+            return fn_to_execute()
+        except (InternalServerError, ServiceUnavailable) as e:
+            retries += 1
+            logging.warning('Server error encountered, retrying. Attempt {} of {}. '
+                            'Error message: {}'.format(retries, max_retries, e))
+    raise RuntimeError('Maximum number of retries exceeded.')
+
+
+def delete_and_recreate_table(table):
+    if table.exists():
+        table.delete()
+    table.create()
+    table.reload()

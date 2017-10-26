@@ -19,16 +19,22 @@ Sample usage:
     result = client.Query(query)
 """
 
+# This is a workaround to address
+# https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
+from __future__ import absolute_import
+
 from collections import OrderedDict
 import datetime
 import json
+import logging
 import os
 import time
 import uuid
 
 from google.cloud import bigquery, storage
 
-from verily.bigquery_wrapper.bq_base import BigqueryBaseClient, wait_for_job
+from verily.bigquery_wrapper.bq_base import (BigqueryBaseClient, execute_with_retries, wait_for_job,
+                                             delete_and_recreate_table)
 
 
 class TimeoutException(Exception):
@@ -86,7 +92,7 @@ class Client(BigqueryBaseClient):
             'projectId': query_job.project
         }
 
-        return list(query_results.fetch_data(max_results=max_results))
+        return execute_with_retries(lambda: list(query_results.fetch_data(max_results=max_results)))
 
     def create_table_from_query(self,
                                 query,
@@ -124,20 +130,28 @@ class Client(BigqueryBaseClient):
             wait_for_job(query_job, query=query, max_wait_sec=max_wait_sec)
         return query_job
 
-    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None):
+    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None,
+                                replace_existing_tables=True):
         """Creates a set of tables from a dictionary of table names to their schemas.
 
         Args:
           table_names_to_schemas: A dictionary of:
             key: The table name.
             value: A list of SchemaField objects.
+          dataset_id: The dataset in which to create tables. If not specified, use default dataset.
+          replace_existing_tables: If True, delete and re-create tables. Otherwise, leave
+            pre-existing tables alone and only create those that don't yet exist.
         """
 
         dataset_id = dataset_id if dataset_id else self.dataset
         for name, schema in table_names_to_schemas.iteritems():
             table = self.gclient.dataset(dataset_id).table(name, schema)
             if table.exists():
-                table.delete()
+                if replace_existing_tables:
+                    table.delete()
+                else:
+                    logging.warning('Table {} already exists. Skipping.'.format(name))
+                    continue
             table.create()
 
     def create_dataset(self, name, expiration_hours=None):
@@ -203,7 +217,7 @@ class Client(BigqueryBaseClient):
         dataset_updated = False
         while not dataset_updated:
             try:
-                dataset.update()
+                dataset.reload()
                 dataset_updated = True
             except Exception as ex:
                 if datetime.datetime.now() > deadline:
@@ -213,7 +227,7 @@ class Client(BigqueryBaseClient):
                 time.sleep(2)
 
         # Set the max results to a high number so that all of them get returned.
-        tables = dataset.list_tables(max_results=MAX_TABLES)
+        tables = execute_with_retries(lambda: list(dataset.list_tables(max_results=MAX_TABLES)))
         # Each entry in the list returned by list_tables() is of the form
         # <project>:<dataset>.<table> so this converts them to <dataset>.<table>
         # This is used by the test fixture tear down, so if a change causes this
@@ -263,49 +277,78 @@ class Client(BigqueryBaseClient):
         Returns:
           A list of dataset ids/names (strings).
         """
+        datasets = execute_with_retries(lambda: list(self.gclient.list_datasets()))
 
         # Each entry in the list returned by list_tables() is of the form
         # <project>:<dataset> so this removes the project id.
         # This is used by the test fixture setup, so if a change causes this
         # to start failing, unit tests will break.
-        return [ds.name for ds in self.gclient.list_datasets()]
+        return [ds.name for ds in datasets]
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=DEFAULT_TIMEOUT_SEC):
-        """Create a table and populate it with a list of rows.
+    def populate_table(self, table_path, columns, data=[], max_wait_sec=DEFAULT_TIMEOUT_SEC,
+                       max_retries=1):
+        """Creates a table and populates it with a list of rows.
+
+        The data is written using the BQ streaming API, which does not immediately make the data
+        available for pulling the table. However, it is immediately available for querying, and a
+        table created from a query is immediately available for pulling. So, we stream the data
+        into a temporary table, then query the temp table to create the requested table.
+
+        If max_wait_sec is reached and there's still no data in the temporary table, attempt to
+        insert data again up to max_retries times.
 
         Args:
-          table_path: A string of the form '<dataset id>.<table name>'.
-          columns: A list of pairs (<column name>, <value type>).
-          data: A list of rows, each of which is a list of values.
-          max_wait_sec: The maximum amount of time to wait for the table to be populated.
+            table_path: A string of the form '<dataset id>.<table name>'.
+            columns: A list of pairs (<column name>, <value type>).
+            data: A list of rows, each of which is a list of values.
+            max_wait_sec: The maximum number of seconds to wait for the table to be populated.
+            max_retries: The maximum number of times to retry each time max_wait_sec is reached.
         """
-        # The data is written using the BQ streaming API, which does not immediately make the data
-        # available for pulling the table. However, it is immediately available for querying, and a
-        # table created from a query is immediately available for pulling. So, we stream the data
-        # into a temporary table, then query the temp table to create the requested table.
         tmp_path = table_path + "_tmp"
-        _, dataset_id, table_id = self.parse_table_path(tmp_path)
+        _, dataset_id, tmp_table_id = self.parse_table_path(tmp_path)
         schema = [bigquery.SchemaField(c[0], c[1]) for c in columns]
-        table = self.gclient.dataset(dataset_id).table(table_id, schema)
-        if table.exists():
-            table.delete()
-        table.create()
-        table.reload()
+
+        tmp_table = self.gclient.dataset(dataset_id).table(tmp_table_id, schema)
+        delete_and_recreate_table(tmp_table)
+        select_all_from_tmp_table_query = 'SELECT * FROM `' + tmp_path + '`'
         if data:
-            # We don't pass through a schema because we trust the table to be created correctly.
-            self.append_rows(tmp_path, data, max_wait_sec=max_wait_sec)
+            # The BigQuery streaming API does not guarantee the data will be queryable immediately,
+            # so we need to wait for data to show up in the temporary table before creating another
+            # table from it.
+            # The retry and timout logic fixes flaky test failures.
+            num_retries = 0
+            success = False
+            while num_retries < max_retries:
+                # We don't pass through a schema because we trust the table to be created correctly.
+                self.append_rows(tmp_path, data)
 
-        self.create_table_from_query('SELECT * FROM `' + tmp_path + '`', table_path)
+                deadline = datetime.datetime.utcnow() + datetime.timedelta(seconds=max_wait_sec)
+                while True:
+                    if self.get_query_results(select_all_from_tmp_table_query):
+                        success = True
+                        break
+                    elif datetime.datetime.utcnow() > deadline:
+                        num_retries += 1
+                        logging.warning(
+                            'Could not populate table, retrying. Attempt {} of {}.'.format(
+                                num_retries, max_retries))
+                        break
+                    time.sleep(1)
+                if success:
+                    break
+            if not success:
+                raise RuntimeError('Max number of retries reached.')
+
+        self.create_table_from_query(select_all_from_tmp_table_query, table_path)
         # Delete the temporary table after the data is inserted.
-        table.delete()
+        tmp_table.delete()
 
-    def append_rows(self, table_path, data, columns=None, max_wait_sec=DEFAULT_TIMEOUT_SEC):
+    def append_rows(self, table_path, data, columns=None):
         """Appends the rows contained in data to the table at table_path.
 
         Args:
           table_path: A string of the form '<dataset id>.<table name>'.
           data: A list of rows, each of which is a list of values.
-          max_wait_sec: The longest we should wait to insert the rows
           columns: Optionally, a list of pairs (<column name>, <value type>) to describe the
               table's expected schema. If this is present, it will check the table's schema against
               the provided schema.

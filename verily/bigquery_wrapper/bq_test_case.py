@@ -18,6 +18,7 @@ down at the end. Subclasses should override create_mock_tables() to create
 temporary tables by calling bq.PopulateTable().
 """
 
+import copy
 import datetime
 import logging
 import json
@@ -31,6 +32,7 @@ import pandas as pd
 
 from verily.bigquery_wrapper import bq as real_bq
 from verily.bigquery_wrapper import mock_bq
+from verily.bigquery_wrapper.pandas_utils import safe_read_csv
 
 # We do our best to clean up all the test datasets, but even if something goes wrong
 # we set testing tables to delete themselves after an hour. This won't eliminate the
@@ -307,7 +309,8 @@ class BQTestCase(unittest.TestCase):
                 date_col_indicies.append(idx)
 
         def parser(x): return datetime.datetime.strptime(x, "%Y-%m-%d").date()
-        df = pd.read_csv(data_file, index_col=None, dtype=dtype_map)
+
+        df = safe_read_csv(data_file, dtype_map)
 
         df = df.where(pd.notnull(df), None)
         values = df.values.tolist()

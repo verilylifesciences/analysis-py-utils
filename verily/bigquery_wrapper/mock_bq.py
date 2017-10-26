@@ -402,7 +402,7 @@ class Client(BigqueryBaseClient):
             self,
             query,
             table_path,
-            write_disposition='WRITE_TRUNCATE',  # pylint: disable=unused-argument
+            write_disposition='WRITE_EMPTY',  # pylint: disable=unused-argument
             use_legacy_sql=False,
             max_wait_sec=60,
             expected_schema=None):  # pylint: disable=unused-argument
@@ -479,13 +479,16 @@ class Client(BigqueryBaseClient):
 
         return query_results
 
-    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None):
+    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None,
+                                replace_existing_tables=True):
         """Creates a set of tables from a dictionary of table names to their schemas.
 
         Args:
           table_names_to_schemas: A dictionary of:
             key: The table name.
             value: A list of SchemaField objects.
+          dataset_id: Has no effect.
+          replace_existing_tables: Has no effect.
         """
         for table_path, schema in table_names_to_schemas.iteritems():
             self._create_table(table_path, schema_fields=schema)
@@ -589,15 +592,17 @@ class Client(BigqueryBaseClient):
         """
         return self.project_map[self.project_id].keys()
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=60):
+    def populate_table(self, table_path, columns, data=[], max_wait_sec=60, max_retries=1):
         """Create a table and populate it with a list of rows. This mock
         retains the functionality of the original bq client and deletes
         and recreates the table if it was already present.
 
         Args:
-          table_path: A string of the form '<dataset id>.<table name>'.
-          columns: A list of pairs (<column name>, <value type>).
-          data: A list of rows, each of which is a list of values.
+            table_path: A string of the form '<dataset id>.<table name>'.
+            columns: A list of pairs (<column name>, <value type>).
+            data: A list of rows, each of which is a list of values.
+            max_wait_sec: Has no effect.
+            max_retries: Has no effect.
         """
         _, dataset, table_name = self.parse_table_path(table_path, TABLE_PATH_DELIMITER)
         tables_in_dataset = self.table_map[dataset]
@@ -618,7 +623,7 @@ class Client(BigqueryBaseClient):
           table_path: A string of the form '<dataset id>.<table name>'.
           columns: A list of pairs (<column name>, <value type>).
           data: A list of rows, each of which is a list of values.
-          max_wait_sec: The longest we should wait to insert the rows
+          max_wait_sec: The longest we should wait to insert the rows. Has no effect.
 
         Raises:
             RuntimeError: if the schema passed in as columns doesn't match the schema of the
