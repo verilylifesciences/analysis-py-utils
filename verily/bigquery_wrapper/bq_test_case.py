@@ -30,6 +30,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
+from google.cloud.bigquery.schema import SchemaField
+
 from verily.bigquery_wrapper import bq as real_bq
 from verily.bigquery_wrapper import mock_bq
 from verily.bigquery_wrapper.pandas_utils import safe_read_csv
@@ -192,9 +194,7 @@ class BQTestCase(unittest.TestCase):
         assert len(data) == len(row_data), \
             'Generated data should have as many rows as input'
         table_path = cls.table_path(table_name)
-        schema_list = [(schema_field.name, schema_field.field_type)
-                       for schema_field in table_schema]
-        cls.client.populate_table(table_path, schema_list, data, max_wait_sec=120)
+        cls.client.populate_table(table_path, table_schema, data, max_wait_sec=120)
         cls.resources.add_or_update_bigquery_table(table_name, table_path)
 
     def _comment_helper(self, comments_list, idx):
@@ -339,7 +339,7 @@ class BQTestCase(unittest.TestCase):
         table_path = cls.table_path(table_name + table_postfix)
         with open(schema_file) as f:
             schema_json = json.load(f)
-        schema_list = [(row['name'], row['type']) for row in schema_json]
+        schema_list = [SchemaField(row['name'], row['type']) for row in schema_json]
         cls.client.populate_table(table_path, schema_list, data, max_wait_sec=60)
         cls.resources.add_or_update_bigquery_table(table_name, table_path)
 

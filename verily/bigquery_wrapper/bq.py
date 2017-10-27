@@ -261,7 +261,7 @@ class Client(BigqueryBaseClient):
           table_name: The name of the table.
           project_id: The project ID of the table.
         Returns:
-          A list of tuples (column_name, value_type)
+          A list of SchemaFields representing the schema.
         """
 
         table = self._get_bq_table(table_name, dataset_id, project_id)
@@ -269,7 +269,7 @@ class Client(BigqueryBaseClient):
         # Note: The reload() method below does not return the data in the table, it only returns the
         # table resource, which describes the structure of this table.
         table.reload()
-        return [(c.name, c.field_type) for c in table.schema]
+        return table.schema
 
     def get_datasets(self):
         """Returns a list of dataset ids in the current project.
@@ -285,7 +285,7 @@ class Client(BigqueryBaseClient):
         # to start failing, unit tests will break.
         return [ds.name for ds in datasets]
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=DEFAULT_TIMEOUT_SEC,
+    def populate_table(self, table_path, schema, data=[], max_wait_sec=DEFAULT_TIMEOUT_SEC,
                        max_retries=1):
         """Creates a table and populates it with a list of rows.
 
@@ -299,14 +299,13 @@ class Client(BigqueryBaseClient):
 
         Args:
             table_path: A string of the form '<dataset id>.<table name>'.
-            columns: A list of pairs (<column name>, <value type>).
+            schema: A list of SchemaFields to represent the table's schema.
             data: A list of rows, each of which is a list of values.
             max_wait_sec: The maximum number of seconds to wait for the table to be populated.
             max_retries: The maximum number of times to retry each time max_wait_sec is reached.
         """
         tmp_path = table_path + "_tmp"
         _, dataset_id, tmp_table_id = self.parse_table_path(tmp_path)
-        schema = [bigquery.SchemaField(c[0], c[1]) for c in columns]
 
         tmp_table = self.gclient.dataset(dataset_id).table(tmp_table_id, schema)
         delete_and_recreate_table(tmp_table)
@@ -361,7 +360,8 @@ class Client(BigqueryBaseClient):
         _, dataset_id, table_id = self.parse_table_path(table_path)
         table = self.gclient.dataset(dataset_id).table(table_id)
         table.reload()
-        table_schema = self.get_schema(dataset_id, table_id, self.project_id)
+        table_schema = [(x.name, x.field_type)
+                        for x in self.get_schema(dataset_id, table_id, self.project_id)]
 
         if not table.exists():
             raise RuntimeError("The table " + table_id + " doesn't exist.")
@@ -493,8 +493,8 @@ class Client(BigqueryBaseClient):
 
         # Export schema as a json file to the bucket
         schema = [
-            OrderedDict([('name', name), ('type', field_type)])
-            for name, field_type in self.get_schema(dataset_id, table_name, table_project)
+            OrderedDict([('name', field.name), ('type', field.field_type)])
+            for field in self.get_schema(dataset_id, table_name, table_project)
         ]
 
         schema_blob = storage.blob.Blob(schema_path,

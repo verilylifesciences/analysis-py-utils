@@ -15,11 +15,15 @@
 
 from ddt import data, ddt, unpack
 from google.cloud import bigquery
+from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq_test_case, mock_bq
 
 LONG_TABLE_LENGTH = 200000
 
+FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
+                               SchemaField('bar', 'INTEGER'),
+                               SchemaField('baz', 'INTEGER')]
 
 @ddt
 class BQTest(bq_test_case.BQTestCase):
@@ -30,24 +34,26 @@ class BQTest(bq_test_case.BQTestCase):
         cls.src_table_name = cls.client.path('tmp', delimiter=mock_bq.REPLACEMENT_DELIMITER)
         cls.client.populate_table(
             cls.src_table_name,
-            [('foo', 'INTEGER'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
+                FOO_BAR_BAZ_INTEGERS_SCHEMA,
             [[1, 2, 3], [4, 5, 6]], )
 
         cls.dates_table_name = cls.client.path('dates', delimiter=mock_bq.REPLACEMENT_DELIMITER)
         cls.client.populate_table(
             cls.dates_table_name,
-            [('foo', 'DATETIME'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
+            [SchemaField('foo', 'DATETIME'),
+             SchemaField('bar', 'INTEGER'),
+             SchemaField('baz', 'INTEGER')],
             [['1987-05-13 00:00:00', 2, 3], ['1950-01-01 00:00:00', 5, 6]], )
 
         cls.long_table_name = cls.client.path('long_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
         cls.client.populate_table(cls.long_table_name, [
-            ('foo', 'INTEGER'),
+            SchemaField('foo', 'INTEGER'),
         ], [[1]] * LONG_TABLE_LENGTH)
 
         cls.str_table_name = cls.client.path('strings', delimiter=mock_bq.REPLACEMENT_DELIMITER)
         cls.client.populate_table(
             cls.str_table_name,
-            [('char1', 'STRING')],
+            [SchemaField('char1', 'STRING')],
             [['123'], ['456']], )
 
     @classmethod
@@ -194,15 +200,18 @@ class BQTest(bq_test_case.BQTestCase):
                 bigquery.SchemaField('col2', 'INTEGER'),
             ]
         })
-        self.assertEqual([('col1', 'INTEGER'), ('col2', 'STRING')],
-                         self.client.get_schema(self.dataset_name, 'empty_1'))
-        self.assertEqual([('col1', 'FLOAT'), ('col2', 'INTEGER')],
-                         self.client.get_schema(self.dataset_name, 'empty_2'))
+        self.assertEqual([('col1', 'INTEGER', 'NULLABLE'), ('col2', 'STRING', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
+        self.assertEqual([('col1', 'FLOAT', 'NULLABLE'), ('col2', 'INTEGER', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
 
     def test_populate_table(self):
         # type: () -> None
         dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.populate_table(dest_table, [('col1', 'INTEGER'), ('col2', 'STRING')],
+        self.client.populate_table(dest_table, [SchemaField('col1', 'INTEGER'),
+                                                SchemaField('col2', 'STRING')],
                                    [(1, 'a'), ('2', 'c')])
         result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
         self.assertSetEqual(set(result), set([(1, 'a'), (2, 'c')]))
@@ -210,7 +219,8 @@ class BQTest(bq_test_case.BQTestCase):
     def test_populate_table_with_nulls(self):
         # type: () -> None
         dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.populate_table(dest_table, [('col1', 'INTEGER'), ('col2', 'STRING')],
+        self.client.populate_table(dest_table, [SchemaField('col1', 'INTEGER'),
+                                                SchemaField('col2', 'STRING')],
                                    [(1, None), (2, 'c')])
         result = self.client.get_query_results(
             'SELECT * FROM `' + dest_table + '` WHERE col2 IS NULL')
@@ -219,7 +229,8 @@ class BQTest(bq_test_case.BQTestCase):
     def test_populate_table_with_64_types(self):
         # type: () -> None
         dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.populate_table(dest_table, [('col1', 'INT64'), ('col2', 'FLOAT64')],
+        self.client.populate_table(dest_table, [SchemaField('col1', 'INT64'),
+                                                SchemaField('col2', 'FLOAT64')],
                                    [(1, 2.5), (20, 6.5)])
         result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
         self.assertSetEqual(set(result), set([(1, 2.5), (20, 6.5)]))
@@ -227,8 +238,8 @@ class BQTest(bq_test_case.BQTestCase):
     def test_add_rows(self):
         table_name = self.src_table_name + '_for_append'
         self.client.populate_table(table_name,
-                                  [('foo', 'INTEGER'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
-                                  [[1, 2, 3], [4, 5, 6]])
+                                   FOO_BAR_BAZ_INTEGERS_SCHEMA,
+                                   [[1, 2, 3], [4, 5, 6]])
 
         self.client.append_rows(table_name, [[7, 8, 9]])
 
@@ -238,13 +249,14 @@ class BQTest(bq_test_case.BQTestCase):
     def test_add_rows_bad_schema_raises(self):
         table_name = self.src_table_name + '_for_append'
         self.client.populate_table(table_name,
-                                  [('foo', 'INTEGER'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
-                                  [[1, 2, 3], [4, 5, 6]])
+                                   FOO_BAR_BAZ_INTEGERS_SCHEMA,
+                                   [[1, 2, 3], [4, 5, 6]])
 
         with self.assertRaises(RuntimeError):
             self.client.append_rows(table_name,
                                     [[7, 8, 9]],
-                                    [('foo', 'INTEGER'), ('bar', 'INTEGER')])
+                                    [SchemaField('foo', 'INTEGER'),
+                                     SchemaField('bar', 'INTEGER')])
 
 if __name__ == '__main__':
     bq_test_case.main()

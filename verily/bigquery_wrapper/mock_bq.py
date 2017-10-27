@@ -23,7 +23,7 @@ import logging
 import re
 
 from pysqlite2 import dbapi2 as sqlite3
-from google.cloud import bigquery
+from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper.bq_base import TABLE_PATH_DELIMITER, BigqueryBaseClient
 
@@ -563,7 +563,7 @@ class Client(BigqueryBaseClient):
           table_name: The name of the table.
           project_id: The project ID of the table.
         Returns:
-          A list of tuples (column_name, value_type)
+          A list of SchemaFields representing the schema.
         """
         # schema rows are in the format (order, name, type, ...)
         standardized_path = self.path(table_name, dataset_id, project_id, REPLACEMENT_DELIMITER)
@@ -581,7 +581,9 @@ class Client(BigqueryBaseClient):
                 row_type = self._sqlite_type_to_bq_type(schema[i][2], sample=single_row[0][i])
             else:
                 row_type = self._sqlite_type_to_bq_type(schema[i][2])
-            returned_schema.append((row_name, row_type))
+            # Repeated fields are not supported in mock BigQuery so we always set the mode
+            # to nullable.
+            returned_schema.append(SchemaField(row_name, row_type, mode='NULLABLE'))
         return returned_schema
 
     def get_datasets(self):
@@ -592,14 +594,14 @@ class Client(BigqueryBaseClient):
         """
         return self.project_map[self.project_id].keys()
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=60, max_retries=1):
+    def populate_table(self, table_path, schema, data=[], max_wait_sec=60, max_retries=1):
         """Create a table and populate it with a list of rows. This mock
         retains the functionality of the original bq client and deletes
         and recreates the table if it was already present.
 
         Args:
             table_path: A string of the form '<dataset id>.<table name>'.
-            columns: A list of pairs (<column name>, <value type>).
+            schema: A list of SchemaFields representing the schema.
             data: A list of rows, each of which is a list of values.
             max_wait_sec: Has no effect.
             max_retries: Has no effect.
@@ -607,7 +609,8 @@ class Client(BigqueryBaseClient):
         _, dataset, table_name = self.parse_table_path(table_path, TABLE_PATH_DELIMITER)
         tables_in_dataset = self.table_map[dataset]
 
-        schema_field_list = [x[0] + ' ' + self._bq_type_to_sqlite_type(x[1]) for x in columns]
+        schema_field_list = [x.name + ' ' + self._bq_type_to_sqlite_type(x.field_type)
+                             for x in schema]
         schema = '(' + ', '.join(schema_field_list) + ')'
 
         if table_name in tables_in_dataset:

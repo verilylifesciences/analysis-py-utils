@@ -17,6 +17,7 @@ import random
 
 from ddt import data, ddt, unpack
 from google.cloud import bigquery, storage
+from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq, bq_test_case
 
@@ -30,12 +31,14 @@ class BQTest(bq_test_case.BQTestCase):
         # type: () -> None
         """Create mock tables"""
         cls.src_table_name = cls.table_path('tmp')
-        cls.client.populate_table(cls.src_table_name, [('foo', 'INTEGER'), ('bar', 'INTEGER'),
-                                                       ('baz', 'INTEGER')], [[1, 2, 3], [4, 5, 6]])
+        cls.client.populate_table(cls.src_table_name, [SchemaField('foo', 'INTEGER'),
+                                                       SchemaField('bar', 'INTEGER'),
+                                                       SchemaField('baz', 'INTEGER')],
+                                  [[1, 2, 3], [4, 5, 6]])
 
         cls.long_table_name = cls.table_path('long_table')
         cls.client.populate_table(cls.long_table_name, [
-            ('foo', 'INTEGER'),
+            SchemaField('foo', 'INTEGER'),
         ], [[1]] * LONG_TABLE_LENGTH)
 
     @classmethod
@@ -233,19 +236,36 @@ class BQTest(bq_test_case.BQTestCase):
         """Test bq.Client.get_schema"""
         self.client.create_tables_from_dict({
             'empty_1':
-            [bigquery.SchemaField('col1', 'INTEGER'), bigquery.SchemaField('col2', 'STRING')],
+            [bigquery.SchemaField('col1', 'INTEGER', mode='REPEATED'),
+             bigquery.SchemaField('col2', 'STRING')],
             'empty_2':
             [bigquery.SchemaField('col1', 'FLOAT'), bigquery.SchemaField('col2', 'INTEGER')]
         })
-        self.assertEqual([('col1', 'INTEGER'), ('col2', 'STRING')],
-                         self.client.get_schema(self.dataset_name, 'empty_1'))
-        self.assertEqual([('col1', 'FLOAT'), ('col2', 'INTEGER')],
-                         self.client.get_schema(self.dataset_name, 'empty_2'))
+        self.assertEqual([('col1', 'INTEGER', 'REPEATED'), ('col2', 'STRING', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
+        self.assertEqual([('col1', 'FLOAT', 'NULLABLE'), ('col2', 'INTEGER', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
+
+    def test_add_rows_repeated(self):
+        table_name = self.src_table_name + '_for_append_repeated'
+        self.client.populate_table(table_name,
+                                  [SchemaField('foo', 'INTEGER'),
+                                   SchemaField('bar', 'INTEGER', mode='REPEATED')],
+                                  [[1, [2, 3]], [4, [5, 6]]])
+
+        self.client.append_rows(table_name, [[7, [8, 9]]])
+
+        self.assertEqual([(1, [2, 3]), (4, [5, 6]), (7, [8, 9])].sort(),
+                         self.client.get_query_results("SELECT * FROM " + table_name).sort())
 
     def test_add_rows(self):
         table_name = self.src_table_name + '_for_append'
         self.client.populate_table(table_name,
-                                  [('foo', 'INTEGER'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
+                                  [SchemaField('foo', 'INTEGER'),
+                                   SchemaField('bar', 'INTEGER'),
+                                   SchemaField('baz', 'INTEGER')],
                                   [[1, 2, 3], [4, 5, 6]])
 
         self.client.append_rows(table_name, [[7, 8, 9]])
@@ -256,13 +276,15 @@ class BQTest(bq_test_case.BQTestCase):
     def test_add_rows_bad_schema_raises(self):
         table_name = self.src_table_name + '_for_append_bad_schema'
         self.client.populate_table(table_name,
-                                  [('foo', 'INTEGER'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
+                                  [SchemaField('foo', 'INTEGER'),
+                                   SchemaField('bar', 'INTEGER'),
+                                   SchemaField('baz', 'INTEGER')],
                                   [[1, 2, 3], [4, 5, 6]])
 
         with self.assertRaises(RuntimeError):
             self.client.append_rows(table_name,
                                     [[7, 8, 9]],
-                                    [('foo', 'INTEGER'), ('bar', 'INTEGER')])
+                                    [SchemaField('foo', 'INTEGER'), SchemaField('bar', 'INTEGER')])
 
 if __name__ == '__main__':
     bq_test_case.main()
