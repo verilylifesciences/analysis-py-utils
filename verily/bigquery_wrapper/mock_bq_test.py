@@ -104,7 +104,7 @@ class BQTest(bq_test_case.BQTestCase):
                                             + self.src_table_name + '`', dest_table)
         result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
         self.assertSetEqual(set(result), set([(1, 2, 3), (4, 5, 6)]))
-        self.client.delete_table(dest_table)
+        self.client.delete_table_by_name(dest_table)
 
     def test_query_needs_legacy_sql_prefix_removed(self):
         # type: () -> None

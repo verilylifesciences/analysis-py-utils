@@ -86,7 +86,7 @@ class BQTest(bq_test_case.BQTestCase):
         expected_table_id = '{}:{}.{}'.format(project_id, dataset_id, table_name)
 
         src_table = self.client._get_bq_table(table_name, dataset_id, project_id)
-        src_table.reload()
+        self.client.reload_table(src_table)
 
         self.assertEqual(src_table.table_id, expected_table_id)
 
@@ -188,7 +188,7 @@ class BQTest(bq_test_case.BQTestCase):
                                             + '`', dest_table)
         result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
         self.assertTrue((result == [(1, 2, 3), (4, 5, 6)]) or (result == [(4, 5, 6), (1, 2, 3)]))
-        self.client.delete_table(dest_table)
+        self.client.delete_table_by_name(dest_table)
 
     def test_delete_dataset_with_tables_raises(self):
         # type: () -> None
@@ -198,18 +198,18 @@ class BQTest(bq_test_case.BQTestCase):
                                             + self.src_table_name + '`', dest_table)
 
         with self.assertRaises(Exception):
-            self.client.delete_dataset(self.dataset_name)
+            self.client.delete_dataset_by_name(self.dataset_name)
 
     def test_force_delete_dataset_with_tables(self):
         # type: () -> None
         """Test that we can use DeleteDataset to delete all the tables and the dataset. """
         temp_dataset_name = self.dataset_name + 'dataset_with_tables'
-        self.client.create_dataset(temp_dataset_name)
+        self.client.create_dataset_by_name(temp_dataset_name)
         dest_table = self.table_path('to_be_deleted', dataset_name=temp_dataset_name)
         self.client.create_table_from_query('SELECT * FROM `'
                                             + self.src_table_name + '`', dest_table)
 
-        self.client.delete_dataset(temp_dataset_name, True)
+        self.client.delete_dataset_by_name(temp_dataset_name, True)
         self.assertTrue(temp_dataset_name not in self.client.get_datasets())
 
     def test_path(self):

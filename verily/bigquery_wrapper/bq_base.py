@@ -14,18 +14,20 @@
 """Base class for a library for interacting with BigQuery."""
 
 import datetime
+import logging
 import time
 
-import logging
-from google.cloud.exceptions import ServiceUnavailable, InternalServerError
+from google.cloud.exceptions import InternalServerError, ServiceUnavailable
+
 
 # Bigquery uses . to separate project, dataset, and table parts.
 TABLE_PATH_DELIMITER = '.'
 
-
-class TimeoutException(Exception):
-    def __init__(self, message):
-        super(TimeoutException, self).__init__(message)
+# The call to datasets to list all tables requires you to set a maximum number of tables
+# (or use the unspecified API default). We always want to list all the tables so we set
+# a really high number for it. If ever there would be a dataset with more than 5000 tables,
+# this constant should be adjusted. Also applies to max datasets to list in a project.
+MAX_TABLES = 5000
 
 # Constants for classes of datatypes. Some Bigquery functions accept or return legacy SQL types
 # while others accept or return standard SQL types. These sets map equivalences between them.
@@ -35,11 +37,23 @@ TIME_CLASS = set(['TIMESTAMP', 'DATE', 'TIME', 'DATETIME'])
 BOOLEAN_CLASS = set(['BOOLEAN', 'BOOL'])
 DATATYPE_CLASSES = [INTEGER_CLASS, FLOAT_CLASS, TIME_CLASS, BOOLEAN_CLASS]
 
+# Default maximum number of tries for BQ API calls.
+DEFAULT_MAX_API_CALL_TRIES = 3
+
+
+class TimeoutException(Exception):
+    def __init__(self, message):
+        super(TimeoutException, self).__init__(message)
+
+
 class BigqueryBaseClient(object):
     """Stores credentials and pointers to a BigQuery project.
 
     Args:
       project_id: The id of the project to associate with the client.
+      default_dataset: If specified, use this dataset as the default.
+      maximum_billing_tier: The maximum billing tier of this client.
+      default_max_api_call_tries: The maximum number of tries for any REST API call.
     """
 
     def __init__(self, project_id, default_dataset=None, maximum_billing_tier=None):
@@ -96,16 +110,16 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("create_tables_from_dict is not implemented.")
 
-    def create_dataset(self, name, expiration_hours=None):
+    def create_dataset_by_name(self, name, expiration_hours=None):
         """Create a new dataset within the current project.
 
         Args:
           name: The name of the new dataset.
           expiration_hours: The default expiration time for tables within the dataset.
         """
-        raise NotImplementedError("create_dataset is not implemented.")
+        raise NotImplementedError("create_dataset_by_name is not implemented.")
 
-    def delete_dataset(self, name, delete_all_tables=False):
+    def delete_dataset_by_name(self, name, delete_all_tables=False):
         """Delete a dataset within the current project.
 
         Args:
@@ -113,15 +127,15 @@ class BigqueryBaseClient(object):
           delete_all_tables: If True, will delete all tables in the dataset before attempting to
               delete the dataset. You can't delete a dataset until it contains no tables.
         """
-        raise NotImplementedError("delete_dataset is not implemented.")
+        raise NotImplementedError("delete_dataset_by_name is not implemented.")
 
-    def delete_table(self, table_path):
+    def delete_table_by_name(self, table_path):
         """Delete a table within the current project.
 
         Args:
           table_path: A string of the form '<dataset id>.<table name>'.
         """
-        raise NotImplementedError("delete_table is not implemented.")
+        raise NotImplementedError("delete_table_by_name is not implemented.")
 
     def tables(self, dataset_id):
         """Returns a list of table names in a given dataset.
@@ -154,7 +168,7 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("get_datasets is not implemented.")
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=60, max_retries=1):
+    def populate_table(self, table_path, columns, data=[], max_wait_sec=60, max_tries=1):
         """Create a table and populate it with a list of rows.
 
         Args:
@@ -162,7 +176,7 @@ class BigqueryBaseClient(object):
             columns: A list of pairs (<column name>, <value type>).
             data: A list of rows, each of which is a list of values.
             max_wait_sec: The maximum number of seconds to wait for the table to be populated.
-            max_retries: The maximum number of times to retry each time max_wait_sec is reached.
+            max_tries: The maximum number of tries each time max_wait_sec is reached.
         """
         raise NotImplementedError("populate_table is not implemented.")
 
@@ -282,13 +296,97 @@ class BigqueryBaseClient(object):
             return '{}{}{}{}{}'.format(project_id, delimiter, dataset_id, delimiter, table_path)
         raise RuntimeError('Invalid Bigquery path: ' + table_path)
 
+    def dataset_exists(self, dataset):
+        # type: (dataset) -> bool
+        """Checks if a dataset exists.
 
-def wait_for_job(job, max_wait_sec=None, query=""):
+        Args:
+            dataset: The BQ dataset object to check.
+        """
+        raise NotImplementedError('dataset_exists is not implemented.')
+
+    def table_exists(self, table):
+        # type: (table) -> bool
+        """Checks if a table exists.
+
+        Args:
+            table: The BQ table object to check.
+        """
+        raise NotImplementedError('table_exists is not implemented.')
+
+    def delete_dataset(self, dataset):
+        # type: (dataset) -> None
+        """Deletes a dataset.
+
+        Args:
+            dataset: The BQ dataset object to delete.
+        """
+        raise NotImplementedError('delete_dataset is not implemented.')
+
+    def delete_table(self, table):
+        # type: (table) -> None
+        """Deletes a table.
+
+        Args:
+            table: The BQ table object to delete.
+        """
+        raise NotImplementedError('delete_table is not implemented.')
+
+    def create_dataset(self, dataset):
+        # type: (dataset) -> None
+        """Creates a dataset.
+
+        Args:
+            dataset: The BQ dataset object to create.
+        """
+        raise NotImplementedError('create_dataset is not implemented.')
+
+    def create_table(self, table):
+        # type: (table) -> None
+        """Creates a table.
+
+        Args:
+            table: The BQ table object to representing the table to create.
+        """
+        raise NotImplementedError('create_table is not implemented.')
+
+    def reload_dataset(self, dataset):
+        # type: (dataset) -> None
+        """Reloads a dataset.
+
+        Args:
+            dataset: The BQ dataset object to reload.
+        """
+        raise NotImplementedError('reload_dataset is not implemented.')
+
+    def reload_table(self, table):
+        # type: (table) -> None
+        """Reloads a table.
+
+        Args:
+            table: The BQ table object to reload.
+        """
+        raise NotImplementedError('reload_table is not implemented.')
+
+    def fetch_data_from_table(self, table):
+        # type: (table) -> List[tuple]
+        """Fetches data from the given table.
+
+        Args:
+            table: The BQ table object representing the table from which to fetch data.
+        Returns:
+            List of tuples, where each tuple is a row of the table.
+        """
+        raise NotImplementedError('fetch_data_from_table is not implemented.')
+
+
+def wait_for_job(job, max_wait_sec=None, query="", max_tries=DEFAULT_MAX_API_CALL_TRIES):
     """Returns when a given job is marked complete.
 
     Args:
-      job: A gcloud._AsyncJob.
-      query: Optionally, the query this job is executing.
+        job: A gcloud._AsyncJob.
+        query: Optionally, the query this job is executing.
+        max_tries: Maximum number of tries for the call to check the job status.
 
     Raises:
        TimeoutException: If the job takes longer than max_wait_secs.
@@ -301,18 +399,19 @@ def wait_for_job(job, max_wait_sec=None, query=""):
     start_time = datetime.datetime.utcnow()
     deadline = start_time + datetime.timedelta(seconds=max_wait_sec)
     while datetime.datetime.utcnow() < deadline:
-        if is_job_done(job, query):
+        if is_job_done(job, query, max_tries):
             return True
         time.sleep(1)
     raise TimeoutException('Job ' + job.name + ' timed out.')
 
 
-def is_job_done(job, query=""):
+def is_job_done(job, query="", max_tries=DEFAULT_MAX_API_CALL_TRIES):
     """Returns True only if the job passed in is finished.
 
     Args:
-      job: A gcloud._AsyncJob.
-      query: Optionally, the query this job is executing.
+        job: A gcloud._AsyncJob.
+        query: Optionally, the query this job is executing.
+        max_tries: Maximum number of tries for the call to check the job status.
 
     Returns:
        True if the job is in state DONE, False otherwise.
@@ -320,7 +419,7 @@ def is_job_done(job, query=""):
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    job.reload()
+    execute_with_retries(lambda: job.reload(), max_tries)
     if job.state == 'DONE':
         if job.error_result:
             # The errors the job returns are a list of dictionaries. We treat it as a string
@@ -343,32 +442,25 @@ def is_job_done(job, query=""):
     return False
 
 
-def execute_with_retries(fn_to_execute, max_retries=3):
-    """Execute the given function with the given number of retries.
+def execute_with_retries(fn_to_execute, max_tries=DEFAULT_MAX_API_CALL_TRIES):
+    """Execute the given function with retries.
 
     Retry on common unpredictable BigQuery backend failures.
 
     Args:
         fn_to_execute: The function to execute with retries.
-        max_retries: The maximum number of retries.
+        max_tries: The maximum number of total tries.
     Returns:
         Return values of fn_to_execute
     Raises:
-        RuntimeError: if max_retries is reached.
+        InternalServerError: if max_tries is reached.
     """
-    retries = 0
-    while retries < max_retries:
+    tries = 0
+    while tries < max_tries:
         try:
             return fn_to_execute()
         except (InternalServerError, ServiceUnavailable) as e:
-            retries += 1
+            tries += 1
             logging.warning('Server error encountered, retrying. Attempt {} of {}. '
-                            'Error message: {}'.format(retries, max_retries, e))
-    raise RuntimeError('Maximum number of retries exceeded.')
-
-
-def delete_and_recreate_table(table):
-    if table.exists():
-        table.delete()
-    table.create()
-    table.reload()
+                            'Error message: {}'.format(tries, max_tries, e))
+    raise InternalServerError('Maximum number of retries exceeded.')

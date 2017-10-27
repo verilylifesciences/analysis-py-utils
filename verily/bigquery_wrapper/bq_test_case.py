@@ -20,8 +20,8 @@ temporary tables by calling bq.PopulateTable().
 
 import copy
 import datetime
-import logging
 import json
+import logging
 import os
 import random
 import sys
@@ -34,6 +34,7 @@ from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq as real_bq
 from verily.bigquery_wrapper import mock_bq
+from verily.bigquery_wrapper.bq_base import DEFAULT_MAX_API_CALL_TRIES
 from verily.bigquery_wrapper.pandas_utils import safe_read_csv
 
 # We do our best to clean up all the test datasets, but even if something goes wrong
@@ -57,7 +58,7 @@ class BQTestCase(unittest.TestCase):
     tables_created_in_constructor = []
 
     @classmethod
-    def setUpClass(cls, use_mocks=False):
+    def setUpClass(cls, use_mocks=False, default_max_api_call_tries=DEFAULT_MAX_API_CALL_TRIES):
         cls.use_mocks = use_mocks
         cls.dataset_name = (datetime.datetime.utcnow().strftime("test_%Y_%m_%d_%H_%M_") +
                             str(random.SystemRandom().randint(1000, 9999)))
@@ -69,9 +70,10 @@ class BQTestCase(unittest.TestCase):
               raise ValueError("Environment variable 'TEST_PROJECT' is not set. "
                                "Set its value to be the project id in which you "
                                "wish to run test queries.")
-            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.dataset_name)
+            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.dataset_name,
+                                        default_max_api_call_tries=default_max_api_call_tries)
         # Make the tables in the test datasets expire after an hour.
-        cls.client.create_dataset(cls.dataset_name, expiration_hours=EXPIRATION_HOURS)
+        cls.client.create_dataset_by_name(cls.dataset_name, expiration_hours=EXPIRATION_HOURS)
         cls.create_mock_tables()
 
         # Get the tables present in the class before anything else runs.
@@ -82,12 +84,12 @@ class BQTestCase(unittest.TestCase):
         current_tables = self.client.tables(self.dataset_name)
         for table in current_tables:
             if table not in self.tables_created_in_constructor:
-                self.client.delete_table(table)
+                self.client.delete_table_by_name(table)
 
     @classmethod
     def tearDownClass(cls):
         try:
-            cls.client.delete_dataset(cls.dataset_name, delete_all_tables=True)
+            cls.client.delete_dataset_by_name(cls.dataset_name, delete_all_tables=True)
         # TODO(PM-980): This exception should probably be handled differently but I'm not sure how.
         except Exception as ex:
             log = logging.getLogger("BQTestCase")
