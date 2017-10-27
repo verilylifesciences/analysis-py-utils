@@ -37,6 +37,7 @@ Here is a simple example test using BQTestCase:
 
 ```python
 import unittest
+from google.cloud.bigquery.schema import SchemaField
 from verily.bigquery_wrapper import bq_test_case
 
 class SampleTest(bq_test_case.BQTestCase):
@@ -50,9 +51,11 @@ class SampleTest(bq_test_case.BQTestCase):
         # type: () -> None
         """Create mock tables"""
         cls.src_table_name = cls.client.path('tmp')
-        cls.client.PopulateTable(
+        cls.client.populate_table(
             cls.src_table_name,
-            [('foo', 'INTEGER'), ('bar', 'INTEGER'), ('baz', 'INTEGER')],
+            [SchemaField('foo', 'INTEGER'),
+             SchemaField('bar', 'INTEGER'),
+             SchemaField('baz', 'INTEGER')],
             [[1, 2, 3], [4, 5, 6]])
 
     @classmethod
@@ -102,6 +105,7 @@ the following contents.
 
 ```python
 import unittest
+from google.cloud.bigquery.schema import SchemaField
 from jinja2 import Template
 from verily.bigquery_wrapper import bq_test_case
 
@@ -116,7 +120,8 @@ class QueryTest(bq_test_case.BQTestCase):
     cls.src_table_name = cls.client.path("data")
     cls.client.populate_table(
         cls.src_table_name,
-        [("foo", "STRING"), ("bar", "INTEGER")],
+        [SchemaField("foo", "STRING"),
+         SchemaField("bar", "INTEGER")],
         [
             ["foo1", 0],
             ["foo2", 0],
