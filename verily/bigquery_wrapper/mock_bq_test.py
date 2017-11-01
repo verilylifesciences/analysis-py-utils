@@ -13,6 +13,8 @@
 # limitations under the License.
 """Unit tests for the bq library."""
 
+from __future__ import absolute_import
+
 from ddt import data, ddt, unpack
 from google.cloud import bigquery
 from google.cloud.bigquery.schema import SchemaField
@@ -135,9 +137,13 @@ class BQTest(bq_test_case.BQTestCase):
 
     def test_query_needs_format_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
-                                               + 'FROM `' + self.src_table_name + '`')
-        self.assertSetEqual(set(result), set([('1 and 2', 3), ('4 and 5', 6)]))
+        # Some environments have an older version of sqlite3 installed which is fine
+        # for all tests except this one.
+        import sqlite3
+        if sqlite3.sqlite_version != '3.8.2':
+          result = self.client.get_query_results('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
+                                                 + 'FROM `' + self.src_table_name + '`')
+          self.assertSetEqual(set(result), set([('1 and 2', 3), ('4 and 5', 6)]))
 
     def test_query_needs_extract_year_fixed(self):
         # type: () -> None

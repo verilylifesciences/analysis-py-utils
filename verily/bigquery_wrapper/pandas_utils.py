@@ -14,6 +14,8 @@
 """This file contains utilities that are useful for working with pandas.
 """
 
+from __future__ import absolute_import
+
 import copy
 
 import numpy as np

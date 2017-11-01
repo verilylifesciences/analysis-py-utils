@@ -13,6 +13,8 @@
 # limitations under the License.
 """Base class for a library for interacting with BigQuery."""
 
+from __future__ import absolute_import
+
 import datetime
 import logging
 import time

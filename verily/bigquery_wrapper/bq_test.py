@@ -13,6 +13,8 @@
 # limitations under the License.
 """Unit tests for the bq library."""
 
+from __future__ import absolute_import
+
 import random
 
 from ddt import data, ddt, unpack

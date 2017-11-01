@@ -18,6 +18,8 @@ down at the end. Subclasses should override create_mock_tables() to create
 temporary tables by calling bq.PopulateTable().
 """
 
+from __future__ import absolute_import
+
 import copy
 import datetime
 import json

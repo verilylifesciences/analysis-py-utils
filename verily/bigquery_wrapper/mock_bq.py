@@ -18,6 +18,9 @@ Sample usage:
     client = mock_bq.Client(project_id)
     result = client.Query(query)
 """
+
+from __future__ import absolute_import
+
 import datetime
 import logging
 import re
