@@ -17,7 +17,7 @@ from setuptools import find_packages
 from setuptools import setup
 
 REQUIRED_PACKAGES = ['pandas',
-                     'google-cloud-bigquery==0.27.0',
+                     'google-cloud==0.27.0',
                      'pysqlite>=2.8.3',
                      'ddt']
 

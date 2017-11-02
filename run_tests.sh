@@ -31,10 +31,7 @@ set -o nounset
 
 pip install --upgrade pip
 pip install --upgrade setuptools
-python setup.py install
-# Work around 'error: grpcio 1.7.0 is installed but grpcio<1.6dev,>=1.0.2 is required by set(['google-gax'])'
-# pip knows how to install google-cloud properly but python setup.py install does not.
-pip install --upgrade google-cloud==0.27.0 --ignore-installed
+pip install .
 
 # Check the version of sqlite3 installed.
 python -c "import sqlite3; print(sqlite3.sqlite_version)"

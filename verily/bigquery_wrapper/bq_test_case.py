@@ -35,7 +35,11 @@ import pandas as pd
 from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq as real_bq
-from verily.bigquery_wrapper import mock_bq
+try:
+  from verily.bigquery_wrapper import mock_bq
+except ImportError as e:
+    print("***NOTE: Only BigQuery tests will work in this environment:\n\t" + str(e))
+
 from verily.bigquery_wrapper.bq_base import DEFAULT_MAX_API_CALL_TRIES
 from verily.bigquery_wrapper.pandas_utils import safe_read_csv
 
