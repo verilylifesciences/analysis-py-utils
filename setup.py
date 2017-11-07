@@ -19,7 +19,8 @@ from setuptools import setup
 REQUIRED_PACKAGES = ['pandas',
                      'google-cloud==0.27.0',
                      'pysqlite>=2.8.3',
-                     'ddt']
+                     'ddt',
+                     'typing']
 
 setup(
     name='analysis-py-utils',
