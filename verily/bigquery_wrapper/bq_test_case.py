@@ -40,7 +40,6 @@ try:
 except ImportError as e:
     print("***NOTE: Only BigQuery tests will work in this environment:\n\t" + str(e))
 
-from verily.bigquery_wrapper.bq_base import DEFAULT_MAX_API_CALL_TRIES
 from verily.bigquery_wrapper.pandas_utils import safe_read_csv
 
 # We do our best to clean up all the test datasets, but even if something goes wrong
@@ -64,7 +63,7 @@ class BQTestCase(unittest.TestCase):
     tables_created_in_constructor = []
 
     @classmethod
-    def setUpClass(cls, use_mocks=False, default_max_api_call_tries=DEFAULT_MAX_API_CALL_TRIES):
+    def setUpClass(cls, use_mocks=False):
         cls.use_mocks = use_mocks
         cls.dataset_name = (datetime.datetime.utcnow().strftime("test_%Y_%m_%d_%H_%M_") +
                             str(random.SystemRandom().randint(1000, 9999)))
@@ -76,8 +75,7 @@ class BQTestCase(unittest.TestCase):
               raise ValueError("Environment variable 'TEST_PROJECT' is not set. "
                                "Set its value to be the project id in which you "
                                "wish to run test queries.")
-            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.dataset_name,
-                                        default_max_api_call_tries=default_max_api_call_tries)
+            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.dataset_name)
         # Make the tables in the test datasets expire after an hour.
         cls.client.create_dataset_by_name(cls.dataset_name, expiration_hours=EXPIRATION_HOURS)
         cls.create_mock_tables()

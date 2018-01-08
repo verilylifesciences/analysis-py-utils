@@ -21,7 +21,7 @@ from ddt import data, ddt, unpack
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.schema import SchemaField
 
-from verily.bigquery_wrapper import bq, bq_test_case
+from verily.bigquery_wrapper import bq_test_case
 
 LONG_TABLE_LENGTH = 200000
 
@@ -73,45 +73,21 @@ class BQTest(bq_test_case.BQTestCase):
         for blob in self.bucket.list_blobs():
             blob.delete()
 
-    def test_get_bq_table_without_dataset(self):
-        # type: () -> None
-        """Test whether an error is raised in _get_bq_table if neither dataset_id or default_dataset
-        is specified"""
-        client_without_dataset = bq.Client(self.TEST_PROJECT)
-        with self.assertRaises(ValueError):
-            client_without_dataset._get_bq_table(self.src_table_name, None)
-
-    def test_get_bq_table(self):
-        # type: () -> None
-        """Test _get_bq_table"""
-        project_id, dataset_id, table_name = self.client.parse_table_path(self.src_table_name)
-        expected_table_id = '{}:{}.{}'.format(project_id, dataset_id, table_name)
-
-        src_table = self.client._get_bq_table(table_name, dataset_id, project_id)
-        self.client.reload_table(src_table)
-
-        self.assertEqual(src_table.table_id, expected_table_id)
-
     def test_load_data(self):
         # type: () -> None
         """Test bq.Client.get_query_results"""
         result = self.client.get_query_results('SELECT * FROM `' + self.src_table_name + '`')
         self.assertTrue((result == [(1, 2, 3), (4, 5, 6)]) or (result == [(4, 5, 6), (1, 2, 3)]))
 
-    @data((500, 500, 'max_results < 10k'), (100000, 100000, 'max_results == 10k'),
-          (100001, 100001, 'max_results > 10k'), (LONG_TABLE_LENGTH * 2, LONG_TABLE_LENGTH,
-                                                  'max_results > total_rows'), (
-                                                      None, LONG_TABLE_LENGTH, 'Load all rows'))
+    @data((LONG_TABLE_LENGTH, 'Load all rows'))
     @unpack
-    def test_load_large_data(self, max_results, expected_length, test_description):
-        # type: (int, int, str) -> None
+    def test_load_large_data(self, expected_length, test_description):
+        # type: (int, str) -> None
         """Test using bq.Client.get_query_results to load very large data
         Args:
-            max_results: Maximum number of results to return
             expected_length: Expected length of results to return
         """
-        result = self.client.get_query_results(
-            'SELECT * FROM `' + self.long_table_name + '`', max_results=max_results)
+        result = self.client.get_query_results('SELECT * FROM `' + self.long_table_name + '`')
 
         self.assertEqual(len(result), expected_length, test_description)
 
@@ -260,6 +236,20 @@ class BQTest(bq_test_case.BQTestCase):
         self.client.append_rows(table_name, [[7, [8, 9]]])
 
         self.assertEqual([(1, [2, 3]), (4, [5, 6]), (7, [8, 9])].sort(),
+                         self.client.get_query_results("SELECT * FROM " + table_name).sort())
+
+    @data((True,), (False,))
+    @unpack
+    def test_populate_both_insert_methods(self, make_immediately_available):
+        table_name = self.src_table_name + '_for_append'
+        self.client.populate_table(table_name,
+                                  [SchemaField('foo', 'INTEGER'),
+                                   SchemaField('bar', 'INTEGER'),
+                                   SchemaField('baz', 'INTEGER')],
+                                  [[1, 2, 3], [4, 5, 6]],
+                                   make_immediately_available=make_immediately_available)
+
+        self.assertEqual([(1,2,3), (4,5,6)].sort(),
                          self.client.get_query_results("SELECT * FROM " + table_name).sort())
 
     def test_add_rows(self):

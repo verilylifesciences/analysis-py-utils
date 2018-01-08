@@ -28,7 +28,7 @@ FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
                                SchemaField('baz', 'INTEGER')]
 
 @ddt
-class BQTest(bq_test_case.BQTestCase):
+class MockBQTest(bq_test_case.BQTestCase):
     @classmethod
     def create_mock_tables(cls):
         # type: () -> None
@@ -62,13 +62,13 @@ class BQTest(bq_test_case.BQTestCase):
     def setUpClass(cls):
         # type: () -> None
         """Set up class"""
-        super(BQTest, cls).setUpClass(use_mocks=True)
+        super(MockBQTest, cls).setUpClass(use_mocks=True)
 
     @classmethod
     def tearDownClass(cls):
         # type: () -> None
         """Tear down class"""
-        super(BQTest, cls).tearDownClass()
+        super(MockBQTest, cls).tearDownClass()
 
     def test_load_data(self):
         # type: () -> None
@@ -76,24 +76,16 @@ class BQTest(bq_test_case.BQTestCase):
         result = self.client.get_query_results('SELECT * FROM `' + self.src_table_name + '`')
         self.assertTrue((result == [(1, 2, 3), (4, 5, 6)]) or (result == [(4, 5, 6), (1, 2, 3)]))
 
-    # The numbers here match the test numbers for the actual BQ client, so this test just ensures
-    # that the max_results parameter works the same in the mock environment as in the real one.
-    @data(
-        (500, 500, 'max_results < 10k'),
-        (100000, 100000, 'max_results == 10k'),
-        (100001, 100001, 'max_results > 10k'),
-        (LONG_TABLE_LENGTH * 2, LONG_TABLE_LENGTH, 'max_results > total_rows'),
-        (None, LONG_TABLE_LENGTH, 'Load all rows'), )
+    @data((LONG_TABLE_LENGTH, 'Load all rows'), )
     @unpack
-    def test_load_large_data(self, max_results, expected_length, test_description):
-        # type: (int, int, str) -> None
+    def test_load_large_data(self, expected_length, test_description):
+        # type: (int, str) -> None
         """Test using bq.Client.get_query_results to load very large data
         Args:
-            max_results: Maximum number of results to return
             expected_length: Expected length of results to return
         """
         result = self.client.get_query_results(
-            'SELECT * FROM `' + self.long_table_name + '`', max_results=max_results)
+            'SELECT * FROM `' + self.long_table_name + '`')
 
         self.assertEqual(
             len(result), expected_length, test_description + '; expected: ' + str(expected_length) +

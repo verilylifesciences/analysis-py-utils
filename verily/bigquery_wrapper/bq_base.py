@@ -15,13 +15,6 @@
 
 from __future__ import absolute_import
 
-import datetime
-import logging
-import time
-
-from google.cloud.exceptions import InternalServerError, ServiceUnavailable
-
-
 # Bigquery uses . to separate project, dataset, and table parts.
 TABLE_PATH_DELIMITER = '.'
 
@@ -39,14 +32,6 @@ TIME_CLASS = set(['TIMESTAMP', 'DATE', 'TIME', 'DATETIME'])
 BOOLEAN_CLASS = set(['BOOLEAN', 'BOOL'])
 DATATYPE_CLASSES = [INTEGER_CLASS, FLOAT_CLASS, TIME_CLASS, BOOLEAN_CLASS]
 
-# Default maximum number of tries for BQ API calls.
-DEFAULT_MAX_API_CALL_TRIES = 3
-
-
-class TimeoutException(Exception):
-    def __init__(self, message):
-        super(TimeoutException, self).__init__(message)
-
 
 class BigqueryBaseClient(object):
     """Stores credentials and pointers to a BigQuery project.
@@ -63,27 +48,30 @@ class BigqueryBaseClient(object):
         self.project_id = project_id
         self.dataset = default_dataset
 
-    def get_query_results(self, query, max_results=None, use_legacy_sql=False, max_wait_sec=60):
+    def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
+        # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
         """Returns a list or rows, each of which is a list of values.
 
         Args:
-          query: A string with a complete SQL query.
-          max_results: Maximum number of rows to return. If None, return all rows
-          use_legacy_sql: Whether to use legacy SQL
-          max_wait_sec: The maximum number of seconds to wait for the query to complete.
-              Default is 60.
+            query: A string with a complete SQL query.
+            use_legacy_sql: Whether to use legacy SQL
+            max_wait_secs: The maximum number of seconds to wait for the query to complete. If not
+                set, the class default will be used.
+
         Returns:
-          A list of lists of values.
+            A list of lists of values.
         """
         raise NotImplementedError("get_query_results is not implemented.")
 
     def create_table_from_query(self,
-                                query,
-                                table_path,
-                                write_disposition='WRITE_EMPTY',
-                                use_legacy_sql=False,
-                                max_wait_sec=60,
-                                expected_schema=None):
+                                query,  # type: str
+                                table_path,  # type: str
+                                write_disposition='WRITE_EMPTY',  # type: Optional[str]
+                                use_legacy_sql=False,  # type: Optional[bool]
+                                max_wait_secs=None,  # type: Optional[int]
+                                expected_schema=None  # type: Optional[List[SchemaField]]
+                                ):
+        # type: (...) -> None
         """Creates a table in BigQuery from a specified query.
 
         Args:
@@ -93,26 +81,32 @@ class BigqueryBaseClient(object):
           write_disposition: One of 'WRITE_TRUNCATE', 'WRITE_APPEND',
               'WRITE_EMPTY'. Default is WRITE_EMPTY.
           use_legacy_sql: Whether the query is written in standard or legacy sql.
-          max_wait_sec: Seconds to wait for the query before timing out. Set to None for async.
+          max_wait_secs: Seconds to wait for the query before timing out. If not
+                set, the class default will be used.
           expected_schema: The expected schema of the resulting table (only required for mocking).
         """
         raise NotImplementedError("create_table_from_query is not implemented.")
 
-    def create_tables_from_dict(self, table_names_to_schemas, dataset_id=None,
-                                replace_existing_tables=True):
+    def create_tables_from_dict(self,
+                                table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
+                                dataset_id=None,  # type: Optional[str]
+                                replace_existing_tables=True  # type: Optional[bool]
+                                ):
+        # type: (...) -> None
         """Creates a set of tables from a dictionary of table names to their schemas.
 
         Args:
           table_names_to_schemas: A dictionary of:
-            key: The table name.
-            value: A list of SchemaField objects.
+              key: The table name.
+              value: A list of SchemaField objects.
           dataset_id: The dataset in which to create tables. If not specified, use default dataset.
           replace_existing_tables: If True, delete and re-create tables. Otherwise, leave
-            pre-existing tables alone and only create those that don't yet exist.
+              pre-existing tables alone and only create those that don't yet exist.
         """
         raise NotImplementedError("create_tables_from_dict is not implemented.")
 
     def create_dataset_by_name(self, name, expiration_hours=None):
+        # type: (str, Optional[float]) -> None
         """Create a new dataset within the current project.
 
         Args:
@@ -122,28 +116,36 @@ class BigqueryBaseClient(object):
         raise NotImplementedError("create_dataset_by_name is not implemented.")
 
     def delete_dataset_by_name(self, name, delete_all_tables=False):
+        # type: (str, Optional[bool]) -> None
         """Delete a dataset within the current project.
 
         Args:
           name: The name of the dataset to delete.
           delete_all_tables: If True, will delete all tables in the dataset before attempting to
               delete the dataset. You can't delete a dataset until it contains no tables.
+
+        Raises:
+            RuntimeError if there are still tables in the dataset and you try to delete it (with
+                delete_all_tables set to False)
         """
         raise NotImplementedError("delete_dataset_by_name is not implemented.")
 
     def delete_table_by_name(self, table_path):
+        # type: (str) -> None
         """Delete a table within the current project.
 
         Args:
-          table_path: A string of the form '<dataset id>.<table name>'.
+          table_path: A string of the form '<dataset id><delimiter><table name>' or
+              '<project id><delimiter><dataset_id><delimiter><table_name>'
         """
         raise NotImplementedError("delete_table_by_name is not implemented.")
 
     def tables(self, dataset_id):
+        # type: (str) -> List[str]
         """Returns a list of table names in a given dataset.
 
         Args:
-          dataset_id: The dataset to query.
+          dataset_id: The name of the dataset to query.
 
         Returns:
           A list of table names (strings).
@@ -151,6 +153,7 @@ class BigqueryBaseClient(object):
         raise NotImplementedError("tables is not implemented.")
 
     def get_schema(self, dataset_id, table_name, project_id=None):
+        # type: (str, str, Optional[str]) -> List[SchemaField]
         """Returns the schema of a table.
 
         Args:
@@ -158,92 +161,114 @@ class BigqueryBaseClient(object):
           table_name: The name of the table.
           project_id: The project ID of the table.
         Returns:
-          A list of tuples (column_name, value_type)
+          A list of SchemaFields representing the schema.
         """
         raise NotImplementedError("get_schema is not implemented.")
 
     def get_datasets(self):
-        """Returns a list of dataset ids in the current project.
+        # type: (None) -> List[str]
+        """Returns a list of dataset ids in the default project.
 
         Returns:
-          A list of dataset ids/names (strings).
+            A list of dataset ids/names (strings).
         """
         raise NotImplementedError("get_datasets is not implemented.")
 
-    def populate_table(self, table_path, columns, data=[], max_wait_sec=60, max_tries=1):
-        """Create a table and populate it with a list of rows.
+    def populate_table(self, table_path, schema, data=[], max_wait_sec=None):
+        # type: (str, List[SchemaField], Optional[List[Any]]) -> None
+        """Creates a table and populates it with a list of rows. If the table is already created,
+        deletes and recreates the table.
 
         Args:
-            table_path: A string of the form '<dataset id>.<table name>'.
-            columns: A list of pairs (<column name>, <value type>).
-            data: A list of rows, each of which is a list of values.
-            max_wait_sec: The maximum number of seconds to wait for the table to be populated.
-            max_tries: The maximum number of tries each time max_wait_sec is reached.
+          table_path: A string of the form '<dataset id><delimiter><table name>'
+              or '<project id><delimiter><dataset id><delimiter><table name>'.
+          schema: A list of SchemaFields to represent the table's schema.
+          data: A list of rows, each of which corresponds to a row to insert into the table.
         """
         raise NotImplementedError("populate_table is not implemented.")
 
-    def append_rows(self, table_path, data, columns=None):
+    def append_rows(self, table_path, data, schema=None):
+        # type: (str, List[Tuple[Any]], Optional[List[SchemaField]]) -> None
         """Appends the rows contained in data to the table at table_path.
-
         Args:
-          table_path: A string of the form '<dataset id>.<table name>'.
+          table_path: A string of the form '<dataset id><delimiter><table name>'
+              or '<project id><delimiter><dataset id><delimiter><table name>'.
           data: A list of rows, each of which is a list of values.
-          columns: Optionally, a list of pairs (<column name>, <value type>) to describe the
+          schema: Optionally, a list of SchemaFields to describe the
               table's expected schema. If this is present, it will check the table's schema against
               the provided schema.
 
         Raises:
             RuntimeError: if the schema passed in as columns doesn't match the schema of the
-                already-created table represented by table_path, or if the table doesn't exist.
+                already-created table represented by table_path, or if the table doesn't exist,
+                or if there are errors inserting the rows.
         """
         raise NotImplementedError("append_rows is not implemented.")
 
     def export_table_to_bucket(self,
-                               table_path,
-                               bucket_name,
-                               dir_in_bucket='',
-                               output_format='csv',
-                               compression=False,
-                               output_ext='',
-                               max_wait_sec=600):
-        """Export a bigquery table to a file in the given bucket. The output file has the same name
-           as the table.
+                               table_path,  # type: str
+                               bucket_name,  # type: str
+                               dir_in_bucket='',  # type: Optional[str]
+                               output_format='csv',  # type: Optional[str]]
+                               compression=False,  # type: Optional[bool]
+                               output_ext='',  # type: Optional[str]
+                               max_wait_secs=None  # type: Optional[int]
+                               ):
+        # type: (...) -> None
+        """
+        Export a BigQuery table to a file in the given bucket. The output file has the same name
+        as the table.
+
         Args:
             table_path: Path of the table
             bucket_name: Name of the bucket to store the spreadsheet
             dir_in_bucket: The directory in the bucket to store the output files
             output_format: Format of output. It must be among 'csv', 'json' and 'avro'
             compression: Whether to use GZIP compression. Avro cannot be used with GZIP compression
-            output_ext: An optional extention to output file. So that we can tell output files from
-                        different exports
-            max_wait_sec: Maximum time to wait. Export table to storage takes significantly longer
-                          than query a table
+            output_ext: An optional extension to output file. So that we can tell output files from
+                different exports
+            max_wait_secs: Maximum time to wait. Export table to storage takes significantly longer
+                than query a table. If not set, it will use the class default.
         """
-        # A mapping table from supported formats to bigquery required formats.
         raise NotImplementedError("export_table_to_bucket is not implemented.")
 
-    def export_schema_to_bucket(self, table_path, bucket_name, dir_in_bucket='', output_ext=''):
-        """Export a bigquery table's schema to a json file in the given bucket. The output file's
+    def export_schema_to_bucket(self,
+                                table_path,  # type: str
+                                bucket_name,  # type: str
+                                dir_in_bucket='',  # type: Optional[str]
+                                output_ext=''  # type: Optional[str]]
+                                ):
+        # type: (...) -> None
+        """
+        Export a BigQuery table's schema to a json file in the given bucket. The output file's
         name is <BQ table name>-schema.json
+
         Args:
             table_path: Path of the table
             bucket_name: Name of the bucket to store the spreadsheet. The bucket must be in project
-                         self.project_id
+                self.project_id
             dir_in_bucket: The directory in the bucket to store the output files
-            output_ext: An optional extention to output file. So that we can tell output files from
-                        different exports
+            output_ext: An optional extension to output file. So that we can tell output files from
+                different exports
         """
         raise NotImplementedError("export_schema_to_bucket is not implemented.")
 
-    def parse_table_path(self, table_path, delimiter=TABLE_PATH_DELIMITER, replace_dashes=False):
+    def parse_table_path(self,
+                         table_path,  # type: str
+                         delimiter=TABLE_PATH_DELIMITER,  # type: str
+                         replace_dashes=False  # type: Optional[bool]
+                         ):
+        # type: (...) -> (str, str, str)
         """Parses a path to a Bigquery Table into a project id, dataset and table name.
 
         If the project id is left out of the path, the project id that was passed into the class
         constructor is returned.
 
         Args:
-            table_path: A table name or a path of the form 'dataset.table' or
-            'project.dataset.table'.
+            table_path: A table name or a path of the form 'dataset<delimiter>table' or
+                'project<delimiter>dataset<delimiter>table'.
+            delimiter: The delimiter used in the table path
+            replace_dashes: Whether to replace dashes with underscores for BigQuery compatibility.
 
         Returns:
             Strings project, dataset, table.
@@ -266,17 +291,20 @@ class BigqueryBaseClient(object):
         return project_id, dataset_id, table_id
 
     def path(self,
-             table_path,
-             dataset_id=None,
-             project_id=None,
-             delimiter=TABLE_PATH_DELIMITER,
-             replace_dashes=False):
-        """Extend a table name to a full Bigquery path using the default project and dataset.
+             table_path,  # type: str
+             dataset_id=None,  # type: Optional[str]
+             project_id=None,  # type: Optional[str]
+             delimiter=TABLE_PATH_DELIMITER,  # type: Optional[str]
+             replace_dashes=False  # type: Optional[str]
+             ):
+        """Extend a table name to a full BigQuery path using the default project and dataset.
 
         Args:
-            table_name: The name of the table, possibly without project or dataset.
+            table_path: The partial or full table path.
             dataset_id: Optional name of a dataset.
             project_id: Optional name of a project.
+            delimiter: The delimiter used in the table path
+            replace_dashes: Whether to replace dashes with underscores for BigQuery compatibility.
 
         Returns:
             A complete path of the form project.dataset.table_name
@@ -298,8 +326,10 @@ class BigqueryBaseClient(object):
             return '{}{}{}{}{}'.format(project_id, delimiter, dataset_id, delimiter, table_path)
         raise RuntimeError('Invalid Bigquery path: ' + table_path)
 
-    def dataset_exists(self, dataset):
-        # type: (dataset) -> bool
+    def dataset_exists(self,
+                       dataset  # type: Dataset, DatasetReference
+                       ):
+        # type: (...) -> bool
         """Checks if a dataset exists.
 
         Args:
@@ -307,107 +337,116 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError('dataset_exists is not implemented.')
 
-    def table_exists(self, table):
-        # type: (table) -> bool
+    def table_exists(self,
+                     table  # type: TableReference, Table
+                     ):
+        # type: (...) -> bool
         """Checks if a table exists.
 
         Args:
-            table: The BQ table object to check.
+            table: The TableReference or Table for the table to check whether it exists.
         """
         raise NotImplementedError('table_exists is not implemented.')
 
-    def delete_dataset(self, dataset):
-        # type: (dataset) -> None
+    def delete_dataset(self,
+                       dataset  # type: Dataset, DatasetReference
+                       ):
+        # type: (...) -> None
         """Deletes a dataset.
 
         Args:
-            dataset: The BQ dataset object to delete.
+            dataset: The Dataset or DatasetReference to delete.
         """
         raise NotImplementedError('delete_dataset is not implemented.')
 
-    def delete_table(self, table):
-        # type: (table) -> None
+    def delete_table(self,
+                     table  # type: Table, TableReference
+                     ):
+        # type: (...) -> None
         """Deletes a table.
 
         Args:
-            table: The BQ table object to delete.
+            table: The Table or TableReference to delete.
         """
         raise NotImplementedError('delete_table is not implemented.')
 
-    def create_dataset(self, dataset):
-        # type: (dataset) -> None
-        """Creates a dataset.
+    def create_dataset(self,
+                       dataset  # type: DatasetReference, Dataset
+                       ):
+        # type: (...) -> None
+        """
+        Creates a dataset.
 
         Args:
-            dataset: The BQ dataset object to create.
+            dataset: The Dataset object to create.
         """
         raise NotImplementedError('create_dataset is not implemented.')
 
-    def create_table(self, table):
-        # type: (table) -> None
-        """Creates a table.
+    def create_table(self,
+                     table  # type: Table, TableReference
+                     ):
+        # type: (Table) -> None
+        """
+        Creates a table.
 
         Args:
-            table: The BQ table object to representing the table to create.
+            table: The Table or TableReference object to create. Note that if you pass a
+                TableReference the table will be created with no schema.
         """
         raise NotImplementedError('create_table is not implemented.')
 
-    def reload_dataset(self, dataset):
-        # type: (dataset) -> None
-        """Reloads a dataset.
-
-        Args:
-            dataset: The BQ dataset object to reload.
+    def fetch_data_from_table(self,
+                              table  # type: Table, TableReference
+                              ):
+        # type: (...) -> List[Tuple[Any]]
         """
-        raise NotImplementedError('reload_dataset is not implemented.')
-
-    def reload_table(self, table):
-        # type: (table) -> None
-        """Reloads a table.
+        Fetches data from the given table.
 
         Args:
-            table: The BQ table object to reload.
-        """
-        raise NotImplementedError('reload_table is not implemented.')
+            table: The Table or TableReference object representing the table from which
+                to fetch data.
 
-    def fetch_data_from_table(self, table):
-        # type: (table) -> List[tuple]
-        """Fetches data from the given table.
-
-        Args:
-            table: The BQ table object representing the table from which to fetch data.
         Returns:
             List of tuples, where each tuple is a row of the table.
         """
         raise NotImplementedError('fetch_data_from_table is not implemented.')
 
+    @staticmethod
+    def list_schema_differences(schema_a, schema_b):
+        # type: (List[SchemaField], List[SchemaField]) -> List[str]
+        """
+        Compares two schemas and raises RuntimeErrors if there are any differences.
 
-def wait_for_job(job, max_wait_sec=None, query="", max_tries=DEFAULT_MAX_API_CALL_TRIES):
-    """Returns when a given job is marked complete.
+        Args:
+            schema_a: A list of SchemaFields representing one table schema.
+            schema_b: A list of SchemaFields representing another table schema.
 
-    Args:
-        job: A gcloud._AsyncJob.
-        query: Optionally, the query this job is executing.
-        max_tries: Maximum number of tries for the call to check the job status.
+        Returns:
+            Empty list if there were no schema mismatches; otherwise a list of schema mismatches.
+        """
+        diff_list = []
+        if len(schema_a) != len(schema_b):
+            diff_list.append('Schema {} is not the same length as schema {}.'
+                             .format(str(schema_a), str(schema_b)))
 
-    Raises:
-       TimeoutException: If the job takes longer than max_wait_secs.
-    """
-
-    # If no default is specified then set it to 10 minutes
-    if not max_wait_sec:
-        max_wait_sec = 600
-
-    start_time = datetime.datetime.utcnow()
-    deadline = start_time + datetime.timedelta(seconds=max_wait_sec)
-    while datetime.datetime.utcnow() < deadline:
-        if is_job_done(job, query, max_tries):
-            return True
-        time.sleep(1)
-    raise TimeoutException('Job ' + job.name + ' timed out.')
+        for i in range(len(schema_a)):
+            if schema_a[0] != schema_b[0]:
+                diff_list.append('Column index {} is named {} in the first schema, but {} in the'
+                                 'second schema.'.format(i, schema_a[0], schema_b[0]))
+            a_datatype = schema_a[1]
+            b_datatype = schema_b[1]
+            if a_datatype != b_datatype:
+                for dt_class in DATATYPE_CLASSES:
+                    if a_datatype in dt_class and b_datatype not in dt_class:
+                        diff_list.append("For column {}, {} is not the same type as {}."
+                                         .format(schema_a[0], a_datatype, b_datatype))
+        return diff_list
 
 
-def is_job_done(job, query="", max_tries=DEFAULT_MAX_API_CALL_TRIES):
+def is_job_done(job,  # type: google.cloud.bigquery.job._AsyncJob
+                query=""  # type: Optional[str]
+                ):
+    # type: (...) -> bool
     """Returns True only if the job passed in is finished.
 
     Args:
@@ -421,14 +460,14 @@ def is_job_done(job, query="", max_tries=DEFAULT_MAX_API_CALL_TRIES):
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    execute_with_retries(lambda: job.reload(), max_tries)
+    job.reload()
     if job.state == 'DONE':
         if job.error_result:
             # The errors the job returns are a list of dictionaries. We treat it as a string
             # so we can put it in the exception message.
             msg = str(job.errors)
             if query:
-                # This crazyness puts line numbers next to the SQL.
+                # This craziness puts line numbers next to the SQL.
                 lines = query.split('\n')
                 longest = max(len(l) for l in lines)
                 # Print out a 'ruler' above and below the SQL so we can judge columns.
@@ -442,27 +481,3 @@ def is_job_done(job, query="", max_tries=DEFAULT_MAX_API_CALL_TRIES):
             raise RuntimeError(msg)
         return True
     return False
-
-
-def execute_with_retries(fn_to_execute, max_tries=DEFAULT_MAX_API_CALL_TRIES):
-    """Execute the given function with retries.
-
-    Retry on common unpredictable BigQuery backend failures.
-
-    Args:
-        fn_to_execute: The function to execute with retries.
-        max_tries: The maximum number of total tries.
-    Returns:
-        Return values of fn_to_execute
-    Raises:
-        InternalServerError: if max_tries is reached.
-    """
-    tries = 0
-    while tries < max_tries:
-        try:
-            return fn_to_execute()
-        except (InternalServerError, ServiceUnavailable) as e:
-            tries += 1
-            logging.warning('Server error encountered, retrying. Attempt {} of {}. '
-                            'Error message: {}'.format(tries, max_tries, e))
-    raise InternalServerError('Maximum number of retries exceeded.')
