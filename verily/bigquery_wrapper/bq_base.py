@@ -90,18 +90,22 @@ class BigqueryBaseClient(object):
     def create_tables_from_dict(self,
                                 table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
                                 dataset_id=None,  # type: Optional[str]
-                                replace_existing_tables=True  # type: Optional[bool]
+                                replace_existing_tables=False  # type: Optional[bool]
                                 ):
         # type: (...) -> None
         """Creates a set of tables from a dictionary of table names to their schemas.
 
         Args:
           table_names_to_schemas: A dictionary of:
-              key: The table name.
-              value: A list of SchemaField objects.
+            key: The table name.
+            value: A list of SchemaField objects.
           dataset_id: The dataset in which to create tables. If not specified, use default dataset.
-          replace_existing_tables: If True, delete and re-create tables. Otherwise, leave
-              pre-existing tables alone and only create those that don't yet exist.
+          replace_existing_tables: If True, delete and re-create tables. Otherwise, checks to see
+              if any of the requested tables exist. If they do, it will raise a RuntimeError.
+
+        Raises:
+            RuntimeError if replace_existing_tables is False and any of the tables requested for
+                creation already exist
         """
         raise NotImplementedError("create_tables_from_dict is not implemented.")
 
@@ -441,6 +445,25 @@ class BigqueryBaseClient(object):
                         diff_list.append("For column {}, {} is not the same type as {}."
                                          .format(schema_a[0], a_datatype, b_datatype))
         return diff_list
+
+    def _raise_if_tables_exist(self, tables, dataset_id=None):
+        """
+        Raises a RuntimeError if any table in the list tables appears in the relevant dataset.
+
+        Args:
+            tables: A list of table IDs
+            dataset: The dataset to check to see if the tables exist in. If not set, it will check
+                self.dataset.
+
+        Raises:
+            RuntimeError if any table in tables appears in the dataset.
+        """
+        intersect = (set(tables)
+                     .intersection(self.tables(dataset_id or self.dataset)))
+        if len(intersect):
+            raise RuntimeError('The tables {} that you requested to create already exist in '
+                               'the dataset {}.',
+                               ','.join(intersect), dataset_id or self.dataset)
 
 
 def is_job_done(job,  # type: google.cloud.bigquery.job._AsyncJob

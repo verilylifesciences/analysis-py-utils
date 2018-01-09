@@ -156,7 +156,7 @@ class Client(BigqueryBaseClient):
     def create_tables_from_dict(self,
                                 table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
                                 dataset_id=None,  # type: Optional[str]
-                                replace_existing_tables=True,  # type: Optional[bool]
+                                replace_existing_tables=False,  # type: Optional[bool]
                                 ):
         # type: (...) -> None
         """Creates a set of tables from a dictionary of table names to their schemas.
@@ -166,23 +166,28 @@ class Client(BigqueryBaseClient):
             key: The table name.
             value: A list of SchemaField objects.
           dataset_id: The dataset in which to create tables. If not specified, use default dataset.
-          replace_existing_tables: If True, delete and re-create tables. Otherwise, leave
-            pre-existing tables alone and only create those that don't yet exist.
+          replace_existing_tables: If True, delete and re-create tables. Otherwise, checks to see
+              if any of the requested tables exist. If they do, it will raise a RuntimeError.
+
+        Raises:
+            RuntimeError if replace_existing_tables is False and any of the tables requested for
+                creation already exist
         """
 
         dataset_ref = DatasetReference(self.project_id, dataset_id if dataset_id else self.dataset)
+
+        # If the flag isn't set to replace existing tables, raise an error if any tables we're
+        # trying to create already exist.
+        if not replace_existing_tables:
+            self._raise_if_tables_exist(table_names_to_schemas.keys())
 
         for name, schema in table_names_to_schemas.iteritems():
             table_ref = TableReference(dataset_ref, name)
             # Use the Table object so it retains its schema.
             table = bigquery.Table(table_ref, schema=schema)
 
-            if self.table_exists(table):
-                if replace_existing_tables:
-                    self.delete_table(table)
-                else:
-                    logging.warning('Table {} already exists. Skipping.'.format(name))
-                    continue
+            if self.table_exists(table) and replace_existing_tables:
+                self.delete_table(table)
             self.create_table(table)
 
     def create_dataset_by_name(self, name, expiration_hours=None):

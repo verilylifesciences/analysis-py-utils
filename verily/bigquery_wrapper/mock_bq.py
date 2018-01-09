@@ -485,29 +485,35 @@ class Client(BigqueryBaseClient):
     def create_tables_from_dict(self,
                                 table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
                                 dataset_id=None,  # type: Optional[str]
-                                replace_existing_tables=True  # type: Optional[bool]
+                                replace_existing_tables=False  # type: Optional[bool]
                                 ):
         # type: (...) -> None
         """Creates a set of tables from a dictionary of table names to their schemas.
 
         Args:
           table_names_to_schemas: A dictionary of:
-              key: The table name.
-              value: A list of SchemaField objects.
+            key: The table name.
+            value: A list of SchemaField objects.
           dataset_id: The dataset in which to create tables. If not specified, use default dataset.
-          replace_existing_tables: If True, delete and re-create tables. Otherwise, leave
-              pre-existing tables alone and only create those that don't yet exist.
+          replace_existing_tables: If True, delete and re-create tables. Otherwise, checks to see
+              if any of the requested tables exist. If they do, it will raise a RuntimeError.
+
+        Raises:
+            RuntimeError if replace_existing_tables is False and any of the tables requested for
+                creation already exist
         """
+
+        # If the flag isn't set to replace existing tables, raise an error if any tables we're
+        # trying to create already exist.
+        if not replace_existing_tables:
+            self._raise_if_tables_exist(table_names_to_schemas.keys())
+
         for table_name, schema in table_names_to_schemas.iteritems():
             table_path = self.path(table_name, dataset_id=dataset_id, project_id=self.project_id,
                                    delimiter=REPLACEMENT_DELIMITER)
 
-            if table_name in self.tables(dataset_id or self.dataset):
-                if replace_existing_tables:
+            if table_name in self.tables(dataset_id or self.dataset) and replace_existing_tables:
                     self.delete_table_by_name(table_name)
-                else:
-                    logging.warning('Table {} already exists. Skipping.'.format(table_name))
-                    continue
             self._create_table(table_path, schema_fields=schema)
 
     def create_dataset_by_name(self, name, expiration_hours=None):
@@ -538,8 +544,8 @@ class Client(BigqueryBaseClient):
           RuntimeError if there are tables in the dataset you try to delete
         """
         if delete_all_tables:
-            for table_path in list(self.tables(name)):
-                self.delete_table_by_name(table_path)
+            for table_name in list(self.tables(name)):
+                self.delete_table_by_name(self.path(table_name, delimiter=REPLACEMENT_DELIMITER))
 
         if len(self.tables(name)) > 0:
             raise RuntimeError('The dataset {} still contains tables: {}'
@@ -560,7 +566,7 @@ class Client(BigqueryBaseClient):
         self.cursor.execute('DROP TABLE ' + standardized_path)
         self.conn.commit()
 
-        self.table_map[dataset].remove(table_name)
+        self.table_map[dataset].remove(standardized_path)
 
     def tables(self, dataset_id):
         # type: (str) -> List[str]
@@ -572,7 +578,12 @@ class Client(BigqueryBaseClient):
         Returns:
           A list of table names (strings).
         """
-        return self.table_map[dataset_id]
+        table_ids = []
+        for table_path in self.table_map[dataset_id]:
+            _, _, table_id = self.parse_table_path(table_path, delimiter=REPLACEMENT_DELIMITER)
+            table_ids.append(table_id)
+
+        return table_ids
 
     def get_schema(self, dataset_id, table_name, project_id=None):
         # type: (str, str, Optional[str]) -> List[SchemaField]
@@ -654,7 +665,8 @@ class Client(BigqueryBaseClient):
             RuntimeError: if the schema passed in as columns doesn't match the schema of the
                 already-created table represented by table_path
         """
-        table_project, dataset_id, table_name = self.parse_table_path(table_path)
+        table_project, dataset_id, table_name = self.parse_table_path(table_path,
+                                                                      delimiter=REPLACEMENT_DELIMITER)  # noqa
         if table_name not in self.tables(dataset_id):
             raise RuntimeError("The table " + table_name + " doesn't exist.")
         if schema is not None:

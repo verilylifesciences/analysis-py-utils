@@ -205,6 +205,60 @@ class MockBQTest(bq_test_case.BQTestCase):
                          [(x.name, x.field_type, x.mode)
                           for x in self.client.get_schema(self.dataset_name, 'empty_2')])
 
+    def test_create_tables_from_dict_overwrite(self):
+        # type: () -> None
+        """Test bq.Client.get_schema"""
+        # Create the dataset once.
+        self.client.create_tables_from_dict({
+            'empty_1':
+            [bigquery.SchemaField('col1', 'INTEGER'),
+             bigquery.SchemaField('col2', 'STRING')],
+            'empty_2':
+            [bigquery.SchemaField('col1', 'FLOAT'), bigquery.SchemaField('col2', 'INTEGER')]
+        },
+                replace_existing_tables=True)
+
+        # Create it again with a different schema. Make sure the changes take since it should have
+        # recreated the dataset.
+        self.client.create_tables_from_dict({
+            'empty_1':
+            [bigquery.SchemaField('col1_test1', 'INTEGER'),
+             bigquery.SchemaField('col2_test2', 'STRING')],
+            'empty_2':
+            [bigquery.SchemaField('col1_test1', 'FLOAT'),
+             bigquery.SchemaField('col2_test2', 'INTEGER')]
+        },
+                replace_existing_tables=True)
+        self.assertEqual([('col1_test1', 'INTEGER', 'NULLABLE'),
+                          ('col2_test2', 'STRING', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
+        self.assertEqual([('col1_test1', 'FLOAT', 'NULLABLE'),
+                          ('col2_test2', 'INTEGER', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
+
+        # Try to create one of the tables again; it should raise a RuntimeError.
+        with self.assertRaises(RuntimeError):
+            self.client.create_tables_from_dict({
+                'empty_1':
+                [bigquery.SchemaField('col1', 'INTEGER'),
+                 bigquery.SchemaField('col2', 'STRING')],
+            },
+                    replace_existing_tables=False)
+
+        # Try to create a table not in the dataset. It should work fine.
+        self.client.create_tables_from_dict({
+            'empty_3':
+            [bigquery.SchemaField('col1', 'INTEGER'),
+             bigquery.SchemaField('col2', 'STRING')],
+        },
+                replace_existing_tables=False)
+        self.assertEqual([('col1', 'INTEGER', 'NULLABLE'),
+                          ('col2', 'STRING', 'NULLABLE')],
+                         [(x.name, x.field_type, x.mode)
+                          for x in self.client.get_schema(self.dataset_name, 'empty_3')])
+
     def test_populate_table(self):
         # type: () -> None
         dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
