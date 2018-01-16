@@ -72,6 +72,9 @@ class Client(BigqueryBaseClient):
         self.table_map = {}
         self.table_map[default_dataset] = []
 
+    def get_delimiter(self):
+        return REPLACEMENT_DELIMITER
+
     @staticmethod
     def _bq_type_to_sqlite_type(typename):
         """ Maps BQ types to SQLite types. One limitation of this class is that there's not a 1:1
@@ -626,18 +629,35 @@ class Client(BigqueryBaseClient):
         Returns:
           A list of dataset ids/names (strings).
         """
-        return self.project_map[self.project_id].keys()
+        return self.project_map[self.project_id]
 
-    def populate_table(self, table_path, schema, data=[], max_wait_sec=None):
-        # type: (str, List[SchemaField], Optional[List[Any]]) -> None
-        """Create a table and populate it with a list of rows. This mock retains the functionality
-        of the original BQ client and deletes and recreates the table if it was already present.
+    def populate_table(self, table_path, schema, data=[], make_immediately_available=False,
+                       replace_existing_table=False):
+        # type: (str, List[SchemaField], Optional[List[Any]], Optional[bool], Optional[bool]) -> None
+        """Creates a table and populates it with a list of rows.
+
+        If make_immediately_available is False, the table will be created using streaming inserts.
+        Note that streaming inserts are immediately available for querying, but not for exporting or
+        copying, so if you need that capability you should set make_immediately_available to True.
+        https://cloud.google.com/bigquery/streaming-data-into-bigquery
+
+        If the table is already created, it will raise a RuntimeError, unless replace_existing_table
+        is True.
 
         Args:
-            table_path: A string of the form '<dataset id>.<table name>'.
-            schema: A list of SchemaFields representing the schema.
-            data: A list of rows, each of which is a list of values.
-            max_wait_sec: Unused in this implementation.
+          table_path: A string of the form '<dataset id><delimiter><table name>'
+              or '<project id><delimiter><dataset id><delimiter><table name>'.
+          schema: A list of SchemaFields to represent the table's schema.
+          data: A list of rows, each of which corresponds to a row to insert into the table.
+          make_immediately_available: If False, the table won't immediately be available for
+              copying or exporting, but will be available for querying. If True, after this
+              operation returns, it will be available for copying and exporting too.
+          replace_existing_table: If set to True, the table at table_path will be deleted and
+              recreated if it's already present.
+
+        Raises:
+            RuntimeError if the table at table_path is already there and replace_existing_table
+                is False
         """
         _, dataset, table_name = self.parse_table_path(table_path, TABLE_PATH_DELIMITER)
         tables_in_dataset = self.table_map[dataset]
@@ -647,7 +667,11 @@ class Client(BigqueryBaseClient):
         schema = '(' + ', '.join(schema_field_list) + ')'
 
         if table_name in tables_in_dataset:
-            self.delete_table_by_name(table_path)
+            if replace_existing_table:
+                self.delete_table_by_name(table_name)
+            else:
+                raise RuntimeError('The table {} already exists.'.format(table_path))
+
         self._create_table(table_path, schema_string=schema)
         self._insert_list_into_table(table_path, data)
 

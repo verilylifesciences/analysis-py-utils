@@ -101,24 +101,6 @@ class BQTestCase(unittest.TestCase):
                         "Dataset contains tables: " + str(cls.client.tables(cls.dataset_name)))
 
     @classmethod
-    def table_path(cls, table_name, dataset_name=None):
-        """Returns a path to a given table name within the dataset passed in,
-        or the temporary dataset if dataset_name is None.
-
-        Args:
-          table_name: The name of the table of interest.
-          dataset_name: The name of the dataset containing that table. If None,
-          then the class's dataset_name will be used.
-
-        Returns:
-          A string: '<temp dataset>.table_name'
-        """
-        if dataset_name:
-            return dataset_name + '.' + table_name
-
-        return cls.dataset_name + '.' + table_name
-
-    @classmethod
     def create_mock_tables(cls):
         """Subclasses should override this to create up mock tables."""
 

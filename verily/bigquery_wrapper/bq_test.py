@@ -18,30 +18,19 @@ from __future__ import absolute_import
 import random
 
 from ddt import data, ddt, unpack
-from google.cloud import bigquery, storage
+from google.cloud import storage
 from google.cloud.bigquery.schema import SchemaField
 
-from verily.bigquery_wrapper import bq_test_case
-
-LONG_TABLE_LENGTH = 200000
+from verily.bigquery_wrapper import bq_shared_tests, bq_test_case
 
 
 @ddt
-class BQTest(bq_test_case.BQTestCase):
+class BQTest(bq_shared_tests.BQSharedTests):
     @classmethod
     def create_mock_tables(cls):
         # type: () -> None
         """Create mock tables"""
-        cls.src_table_name = cls.table_path('tmp')
-        cls.client.populate_table(cls.src_table_name, [SchemaField('foo', 'INTEGER'),
-                                                       SchemaField('bar', 'INTEGER'),
-                                                       SchemaField('baz', 'INTEGER')],
-                                  [[1, 2, 3], [4, 5, 6]])
-
-        cls.long_table_name = cls.table_path('long_table')
-        cls.client.populate_table(cls.long_table_name, [
-            SchemaField('foo', 'INTEGER'),
-        ], [[1]] * LONG_TABLE_LENGTH)
+        super(BQTest, cls).create_mock_tables()
 
     @classmethod
     def create_temp_bucket(cls):
@@ -73,23 +62,18 @@ class BQTest(bq_test_case.BQTestCase):
         for blob in self.bucket.list_blobs():
             blob.delete()
 
-    def test_load_data(self):
-        # type: () -> None
-        """Test bq.Client.get_query_results"""
-        result = self.client.get_query_results('SELECT * FROM `' + self.src_table_name + '`')
-        self.assertTrue((result == [(1, 2, 3), (4, 5, 6)]) or (result == [(4, 5, 6), (1, 2, 3)]))
+    def test_add_rows_repeated(self):
+        table_name = self.src_table_name + '_for_append_repeated'
+        self.client.populate_table(table_name,
+                                   [SchemaField('foo', 'INTEGER'),
+                                    SchemaField('bar', 'INTEGER', mode='REPEATED')],
+                                   [[1, [2, 3]], [4, [5, 6]]])
 
-    @data((LONG_TABLE_LENGTH, 'Load all rows'))
-    @unpack
-    def test_load_large_data(self, expected_length, test_description):
-        # type: (int, str) -> None
-        """Test using bq.Client.get_query_results to load very large data
-        Args:
-            expected_length: Expected length of results to return
-        """
-        result = self.client.get_query_results('SELECT * FROM `' + self.long_table_name + '`')
+        self.client.append_rows(table_name, [[7, [8, 9]]])
 
-        self.assertEqual(len(result), expected_length, test_description)
+        self.assertEqual([(1, [2, 3]), (4, [5, 6]), (7, [8, 9])].sort(),
+                         self.client.get_query_results('SELECT * FROM `{}`'.format(table_name))
+                         .sort())
 
     @data(('invalid format', True, 'Invalid output_format'), ('avro', True, 'GZIP Avro format'))
     @unpack
@@ -113,13 +97,13 @@ class BQTest(bq_test_case.BQTestCase):
           ('csv', True, '', 'ext', 'tmp_ext.csv.gz', 'csv w/ gzip & ext'))
     @unpack
     def test_export_table(self,
-                          out_fmt, # type: str
-                          compression, # type: bool
-                          dir_in_bucket, # type: str
-                          output_ext, # type: str
-                          expected_output_path, # type: str
-                          test_description # type: str
-    ):
+                          out_fmt,  # type: str
+                          compression,  # type: bool
+                          dir_in_bucket,  # type: str
+                          output_ext,  # type: str
+                          expected_output_path,  # type: str
+                          test_description  # type: str
+                          ):
         # type: (...) -> None
         """Test ExportTableToBucket
         Args:
@@ -135,7 +119,8 @@ class BQTest(bq_test_case.BQTestCase):
                                            dir_in_bucket, out_fmt, compression, output_ext)
 
         self.assertTrue(
-            isinstance(self.bucket.get_blob(expected_output_path), storage.Blob), test_description)
+                isinstance(self.bucket.get_blob(expected_output_path), storage.Blob),
+                test_description)
 
     # TODO: Add test to export schemas from a project different from self.client.project_id
     @data(('', '', 'tmp-schema.json', 'Export schema to root'),
@@ -156,181 +141,9 @@ class BQTest(bq_test_case.BQTestCase):
                                             self.temp_bucket_name, dir_in_bucket, output_ext)
 
         self.assertTrue(
-            isinstance(self.bucket.get_blob(expected_schema_path), storage.Blob), test_description)
+                isinstance(self.bucket.get_blob(expected_schema_path), storage.Blob),
+                test_description)
 
-    def test_create_table_from_query(self):
-        # type: () -> None
-        """Test bq.Client.CreateTablesFromQuery"""
-        dest_table = self.table_path('tmp2')
-        self.client.create_table_from_query('SELECT * FROM `' + self.src_table_name
-                                            + '`', dest_table)
-        result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
-        self.assertTrue((result == [(1, 2, 3), (4, 5, 6)]) or (result == [(4, 5, 6), (1, 2, 3)]))
-        self.client.delete_table_by_name(dest_table)
-
-    def test_delete_dataset_with_tables_raises(self):
-        # type: () -> None
-        """Test that deleting a dataset with existing tables will raise an exception."""
-        dest_table = self.table_path('tmp2')
-        self.client.create_table_from_query('SELECT * FROM `'
-                                            + self.src_table_name + '`', dest_table)
-
-        with self.assertRaises(Exception):
-            self.client.delete_dataset_by_name(self.dataset_name)
-
-    def test_force_delete_dataset_with_tables(self):
-        # type: () -> None
-        """Test that we can use DeleteDataset to delete all the tables and the dataset. """
-        temp_dataset_name = self.dataset_name + 'dataset_with_tables'
-        self.client.create_dataset_by_name(temp_dataset_name)
-        dest_table = self.table_path('to_be_deleted', dataset_name=temp_dataset_name)
-        self.client.create_table_from_query('SELECT * FROM `'
-                                            + self.src_table_name + '`', dest_table)
-
-        self.client.delete_dataset_by_name(temp_dataset_name, True)
-        self.assertTrue(temp_dataset_name not in self.client.get_datasets())
-
-    def test_path(self):
-        # type: () -> None
-        """Test bq.Client.Parsetable_path"""
-        table_name = 'my_table'
-        table_path = '{}.{}.{}'.format(self.TEST_PROJECT, self.dataset_name, table_name)
-        mock_path = '{}.{}.{}'.format('my_project', 'my_dataset', table_name)
-        self.assertEqual(table_path, self.client.path('my_table'))
-        self.assertEqual(table_path, self.client.path(self.dataset_name + '.' + table_name))
-        self.assertEqual(table_path, self.client.path(table_path))
-        self.assertEqual(mock_path, self.client.path(table_name, dataset_id='my_dataset',
-                                                     project_id='my_project'))
-
-        self.assertEqual((self.TEST_PROJECT, self.dataset_name, table_name),
-                         self.client.parse_table_path(table_path))
-        self.assertEqual((self.TEST_PROJECT, self.dataset_name, table_name),
-                         self.client.parse_table_path(self.dataset_name + '.' + table_name))
-        self.assertEqual((self.TEST_PROJECT, self.dataset_name, table_name),
-                         self.client.parse_table_path(table_name))
-
-    def test_create_tables_from_dict(self):
-        # type: () -> None
-        """Test bq.Client.get_schema"""
-        self.client.create_tables_from_dict({
-            'empty_1':
-            [bigquery.SchemaField('col1', 'INTEGER', mode='REPEATED'),
-             bigquery.SchemaField('col2', 'STRING')],
-            'empty_2':
-            [bigquery.SchemaField('col1', 'FLOAT'), bigquery.SchemaField('col2', 'INTEGER')]
-        })
-        self.assertEqual([('col1', 'INTEGER', 'REPEATED'), ('col2', 'STRING', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
-        self.assertEqual([('col1', 'FLOAT', 'NULLABLE'), ('col2', 'INTEGER', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
-
-    def test_create_tables_from_dict_overwrite(self):
-        # type: () -> None
-        """Test bq.Client.get_schema"""
-        # Create the dataset once.
-        self.client.create_tables_from_dict({
-            'empty_1':
-            [bigquery.SchemaField('col1', 'INTEGER'),
-             bigquery.SchemaField('col2', 'STRING')],
-            'empty_2':
-            [bigquery.SchemaField('col1', 'FLOAT'), bigquery.SchemaField('col2', 'INTEGER')]
-        },
-                replace_existing_tables=True)
-
-        # Create it again with a different schema. Make sure the changes take since it should have
-        # recreated the dataset.
-        self.client.create_tables_from_dict({
-            'empty_1':
-            [bigquery.SchemaField('col1_test1', 'INTEGER'),
-             bigquery.SchemaField('col2_test2', 'STRING')],
-            'empty_2':
-            [bigquery.SchemaField('col1_test1', 'FLOAT'),
-             bigquery.SchemaField('col2_test2', 'INTEGER')]
-        },
-                replace_existing_tables=True)
-        self.assertEqual([('col1_test1', 'INTEGER', 'NULLABLE'),
-                          ('col2_test2', 'STRING', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
-        self.assertEqual([('col1_test1', 'FLOAT', 'NULLABLE'),
-                          ('col2_test2', 'INTEGER', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
-
-        # Try to create one of the tables again; it should raise a RuntimeError.
-        with self.assertRaises(RuntimeError):
-            self.client.create_tables_from_dict({
-                'empty_1':
-                [bigquery.SchemaField('col1', 'INTEGER'),
-                 bigquery.SchemaField('col2', 'STRING')],
-            },
-                    replace_existing_tables=False)
-
-        # Try to create a table not in the dataset. It should work fine.
-        self.client.create_tables_from_dict({
-            'empty_3':
-            [bigquery.SchemaField('col1', 'INTEGER'),
-             bigquery.SchemaField('col2', 'STRING')],
-        },
-                replace_existing_tables=False)
-        self.assertEqual([('col1', 'INTEGER', 'NULLABLE'),
-                          ('col2', 'STRING', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_3')])
-
-    def test_add_rows_repeated(self):
-        table_name = self.src_table_name + '_for_append_repeated'
-        self.client.populate_table(table_name,
-                                  [SchemaField('foo', 'INTEGER'),
-                                   SchemaField('bar', 'INTEGER', mode='REPEATED')],
-                                  [[1, [2, 3]], [4, [5, 6]]])
-
-        self.client.append_rows(table_name, [[7, [8, 9]]])
-
-        self.assertEqual([(1, [2, 3]), (4, [5, 6]), (7, [8, 9])].sort(),
-                         self.client.get_query_results("SELECT * FROM " + table_name).sort())
-
-    @data((True,), (False,))
-    @unpack
-    def test_populate_both_insert_methods(self, make_immediately_available):
-        table_name = self.src_table_name + '_for_append'
-        self.client.populate_table(table_name,
-                                  [SchemaField('foo', 'INTEGER'),
-                                   SchemaField('bar', 'INTEGER'),
-                                   SchemaField('baz', 'INTEGER')],
-                                  [[1, 2, 3], [4, 5, 6]],
-                                   make_immediately_available=make_immediately_available)
-
-        self.assertEqual([(1,2,3), (4,5,6)].sort(),
-                         self.client.get_query_results("SELECT * FROM " + table_name).sort())
-
-    def test_add_rows(self):
-        table_name = self.src_table_name + '_for_append'
-        self.client.populate_table(table_name,
-                                  [SchemaField('foo', 'INTEGER'),
-                                   SchemaField('bar', 'INTEGER'),
-                                   SchemaField('baz', 'INTEGER')],
-                                  [[1, 2, 3], [4, 5, 6]])
-
-        self.client.append_rows(table_name, [[7, 8, 9]])
-
-        self.assertEqual([(1,2,3), (4,5,6), (7,8,9)].sort(),
-                         self.client.get_query_results("SELECT * FROM " + table_name).sort())
-
-    def test_add_rows_bad_schema_raises(self):
-        table_name = self.src_table_name + '_for_append_bad_schema'
-        self.client.populate_table(table_name,
-                                  [SchemaField('foo', 'INTEGER'),
-                                   SchemaField('bar', 'INTEGER'),
-                                   SchemaField('baz', 'INTEGER')],
-                                  [[1, 2, 3], [4, 5, 6]])
-
-        with self.assertRaises(RuntimeError):
-            self.client.append_rows(table_name,
-                                    [[7, 8, 9]],
-                                    [SchemaField('foo', 'INTEGER'), SchemaField('bar', 'INTEGER')])
 
 if __name__ == '__main__':
     bq_test_case.main()

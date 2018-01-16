@@ -178,16 +178,33 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("get_datasets is not implemented.")
 
-    def populate_table(self, table_path, schema, data=[], max_wait_sec=None):
-        # type: (str, List[SchemaField], Optional[List[Any]]) -> None
-        """Creates a table and populates it with a list of rows. If the table is already created,
-        deletes and recreates the table.
+    def populate_table(self, table_path, schema, data=[], make_immediately_available=False,
+                       replace_existing_table=False):
+        # type: (str, List[SchemaField], Optional[List[Any]], Optional[bool], Optional[bool]) -> None
+        """Creates a table and populates it with a list of rows.
+
+        If make_immediately_available is False, the table will be created using streaming inserts.
+        Note that streaming inserts are immediately available for querying, but not for exporting or
+        copying, so if you need that capability you should set make_immediately_available to True.
+        https://cloud.google.com/bigquery/streaming-data-into-bigquery
+
+        If the table is already created, it will raise a RuntimeError, unless replace_existing_table
+        is True.
 
         Args:
           table_path: A string of the form '<dataset id><delimiter><table name>'
               or '<project id><delimiter><dataset id><delimiter><table name>'.
           schema: A list of SchemaFields to represent the table's schema.
           data: A list of rows, each of which corresponds to a row to insert into the table.
+          make_immediately_available: If False, the table won't immediately be available for
+              copying or exporting, but will be available for querying. If True, after this
+              operation returns, it will be available for copying and exporting too.
+          replace_existing_table: If set to True, the table at table_path will be deleted and
+              recreated if it's already present.
+
+        Raises:
+            RuntimeError if the table at table_path is already there and replace_existing_table
+                is False
         """
         raise NotImplementedError("populate_table is not implemented.")
 

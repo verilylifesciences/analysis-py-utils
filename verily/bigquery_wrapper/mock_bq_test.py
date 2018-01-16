@@ -15,48 +15,34 @@
 
 from __future__ import absolute_import
 
-from ddt import data, ddt, unpack
-from google.cloud import bigquery
+from ddt import ddt
 from google.cloud.bigquery.schema import SchemaField
 
-from verily.bigquery_wrapper import bq_test_case, mock_bq
+from verily.bigquery_wrapper import bq_test_case, bq_shared_tests
 
-LONG_TABLE_LENGTH = 200000
-
-FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
-                               SchemaField('bar', 'INTEGER'),
-                               SchemaField('baz', 'INTEGER')]
 
 @ddt
-class MockBQTest(bq_test_case.BQTestCase):
+class MockBQTest(bq_shared_tests.BQSharedTests):
     @classmethod
     def create_mock_tables(cls):
         # type: () -> None
         """Create mock tables"""
-        cls.src_table_name = cls.client.path('tmp', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        cls.client.populate_table(
-            cls.src_table_name,
-                FOO_BAR_BAZ_INTEGERS_SCHEMA,
-            [[1, 2, 3], [4, 5, 6]], )
 
-        cls.dates_table_name = cls.client.path('dates', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        cls.client.populate_table(
-            cls.dates_table_name,
-            [SchemaField('foo', 'DATETIME'),
-             SchemaField('bar', 'INTEGER'),
-             SchemaField('baz', 'INTEGER')],
-            [['1987-05-13 00:00:00', 2, 3], ['1950-01-01 00:00:00', 5, 6]], )
+        super(MockBQTest, cls).create_mock_tables()
 
-        cls.long_table_name = cls.client.path('long_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        cls.client.populate_table(cls.long_table_name, [
-            SchemaField('foo', 'INTEGER'),
-        ], [[1]] * LONG_TABLE_LENGTH)
-
-        cls.str_table_name = cls.client.path('strings', delimiter=mock_bq.REPLACEMENT_DELIMITER)
+        cls.dates_table_name = cls.client.path('dates', delimiter=cls.client.get_delimiter())
         cls.client.populate_table(
-            cls.str_table_name,
-            [SchemaField('char1', 'STRING')],
-            [['123'], ['456']], )
+                cls.dates_table_name,
+                [SchemaField('foo', 'DATETIME'),
+                 SchemaField('bar', 'INTEGER'),
+                 SchemaField('baz', 'INTEGER')],
+                [['1987-05-13 00:00:00', 2, 3], ['1950-01-01 00:00:00', 5, 6]], )
+
+        cls.str_table_name = cls.client.path('strings', delimiter=cls.client.get_delimiter())
+        cls.client.populate_table(
+                cls.str_table_name,
+                [SchemaField('char1', 'STRING')],
+                [['123'], ['456']], )
 
     @classmethod
     def setUpClass(cls):
@@ -70,61 +56,28 @@ class MockBQTest(bq_test_case.BQTestCase):
         """Tear down class"""
         super(MockBQTest, cls).tearDownClass()
 
-    def test_load_data(self):
-        # type: () -> None
-        """Test bq.Client.get_query_results"""
-        result = self.client.get_query_results('SELECT * FROM `' + self.src_table_name + '`')
-        self.assertTrue((result == [(1, 2, 3), (4, 5, 6)]) or (result == [(4, 5, 6), (1, 2, 3)]))
-
-    @data((LONG_TABLE_LENGTH, 'Load all rows'), )
-    @unpack
-    def test_load_large_data(self, expected_length, test_description):
-        # type: (int, str) -> None
-        """Test using bq.Client.get_query_results to load very large data
-        Args:
-            expected_length: Expected length of results to return
-        """
-        result = self.client.get_query_results(
-            'SELECT * FROM `' + self.long_table_name + '`')
-
-        self.assertEqual(
-            len(result), expected_length, test_description + '; expected: ' + str(expected_length) +
-            ' actual: ' + str(len(result)))
-
-    def test_create_table_from_query(self):
-        # type: () -> None
-        dest_table = self.client.path('tmp2', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.create_table_from_query('SELECT * FROM `'
-                                            + self.src_table_name + '`', dest_table)
-        result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
-        self.assertSetEqual(set(result), set([(1, 2, 3), (4, 5, 6)]))
-        self.client.delete_table_by_name(dest_table)
-
     def test_query_needs_legacy_sql_prefix_removed(self):
         # type: () -> None
-        result = self.client.get_query_results('#legacySQL\nSELECT baz FROM `'
-                                               + self.src_table_name
-                                               + '`')
+        result = self.client.get_query_results('#legacySQL\nSELECT baz FROM `{}`'
+                                               .format(self.src_table_name))
         self.assertSetEqual(set(result), set([(3,), (6,)]))
 
     def test_query_needs_standard_sql_prefix_removed(self):
         # type: () -> None
-        result = self.client.get_query_results('#standardSQL\nSELECT baz FROM `'
-                                               + self.src_table_name
-                                               + '`')
+        result = self.client.get_query_results('#standardSQL\nSELECT baz FROM `{}`'
+                                               .format(self.src_table_name))
         self.assertSetEqual(set(result), set([(3,), (6,)]))
 
     def test_query_needs_division_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT (foo / bar) , baz FROM `'
-                                               + self.src_table_name
-                                               + '`')
+        result = self.client.get_query_results('SELECT (foo / bar) , baz FROM `{}`'
+                                               .format(self.src_table_name))
         self.assertSetEqual(set(result), set([(0.5, 3), (0.8, 6)]))
 
     def test_query_needs_concat_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT CONCAT(foo || bar) , baz FROM `' +
-                                               self.src_table_name + '`')
+        result = self.client.get_query_results('SELECT CONCAT(foo || bar) , baz FROM `{}`'
+                                               .format(self.src_table_name))
         self.assertSetEqual(set(result), set([('12', 3), ('45', 6)]))
 
     def test_query_needs_format_fixed(self):
@@ -133,182 +86,65 @@ class MockBQTest(bq_test_case.BQTestCase):
         # for all tests except this one.
         import sqlite3
         if sqlite3.sqlite_version != '3.8.2':
-          result = self.client.get_query_results('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
-                                                 + 'FROM `' + self.src_table_name + '`')
-          self.assertSetEqual(set(result), set([('1 and 2', 3), ('4 and 5', 6)]))
+            result = self.client.get_query_results('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
+                                                   + 'FROM `{}`'.format(self.src_table_name))
+            self.assertSetEqual(set(result), set([('1 and 2', 3), ('4 and 5', 6)]))
 
     def test_query_needs_extract_year_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT EXTRACT(YEAR FROM foo) FROM `' +
-                                               self.dates_table_name + '`')
-        self.assertSetEqual(set(result), set([(1987, ), (1950, )]))
+        result = self.client.get_query_results('SELECT EXTRACT(YEAR FROM foo) FROM `{}`'
+                                               .format(self.dates_table_name))
+        self.assertSetEqual(set(result), set([(1987,), (1950,)]))
 
     def test_query_needs_extract_month_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT EXTRACT(MONTH FROM foo) FROM `' +
-                                               self.dates_table_name + '`')
-        self.assertSetEqual(set(result), set([(5, ), (1, )]))
+        result = self.client.get_query_results('SELECT EXTRACT(MONTH FROM foo) FROM `{}`'
+                                               .format(self.dates_table_name))
+        self.assertSetEqual(set(result), set([(5,), (1,)]))
 
-    def test_query_needs_substr_fixed(self):
-        # type: () -> None
-        result = self.client.get_query_results(
-                'SELECT SUBSTR(char1,0,2) FROM `' + self.str_table_name + '`')
-        self.assertSetEqual(set(result), set([(u'12', ), (u'45', )]))
 
-    def test_query_needs_farm_fingerprint_fixed(self):
-        # type: () -> None
-        result = self.client.get_query_results(
-                'SELECT FARM_FINGERPRINT(CONCAT(CAST(1),CAST(2))) FROM `' +
-                                               self.src_table_name + '`')
-        self.assertSetEqual(set(result), set([(0, )]))
+def test_query_needs_substr_fixed(self):
+    # type: () -> None
+    result = self.client.get_query_results(
+            'SELECT SUBSTR(char1,0,2) FROM `{}`'.format(self.str_table_name))
+    self.assertSetEqual(set(result), set([(u'12',), (u'45',)]))
 
-    def test_query_needs_farm_fingerprint_fixed_complex(self):
-        # type: () -> None
-        result = self.client.get_query_results(
-                'SELECT FARM_FINGERPRINT(CONCAT(CAST(1 AS STRING),"/",CAST(2 AS STRING))) FROM `' +
-                                               self.src_table_name + '`')
-        self.assertSetEqual(set(result), set([(0, )]))
 
-    def test_query_needs_mod_fixed(self):
-        # type: () -> None
-        result = self.client.get_query_results(
-                'SELECT MOD(foo,4) FROM `' + self.src_table_name + '`')
-        self.assertSetEqual(set(result), set([(0, ), (1, )]))
+def test_query_needs_farm_fingerprint_fixed(self):
+    # type: () -> None
+    result = self.client.get_query_results(
+            'SELECT FARM_FINGERPRINT(CONCAT(CAST(1),CAST(2))) FROM `{}`'
+            .format(self.src_table_name))
+    self.assertSetEqual(set(result), set([(0,)]))
 
-    def test_query_needs_wont_execute_in_sqlite_raises(self):
-        # type: () -> None
-        with self.assertRaises(RuntimeError):
-            self.client.get_query_results('bad query')
 
-    def test_query_legacysql_raises(self):
-        # type: () -> None
-        with self.assertRaises(RuntimeError):
-            self.client.get_query_results(
-                'SELECT * FROM `' + self.src_table_name + '`', use_legacy_sql=True)
+def test_query_needs_farm_fingerprint_fixed_complex(self):
+    # type: () -> None
+    result = self.client.get_query_results(
+            'SELECT FARM_FINGERPRINT(CONCAT(CAST(1 AS STRING),"/",CAST(2 AS STRING))) FROM `{}`'
+            .format(self.src_table_name))
+    self.assertSetEqual(set(result), set([(0,)]))
 
-    def test_create_tables_from_dict(self):
-        # type: () -> None
-        self.client.create_tables_from_dict({
-            'empty_1': [
-                bigquery.SchemaField('col1', 'INTEGER'),
-                bigquery.SchemaField('col2', 'STRING'),
-            ],
-            'empty_2': [
-                bigquery.SchemaField('col1', 'FLOAT'),
-                bigquery.SchemaField('col2', 'INTEGER'),
-            ]
-        })
-        self.assertEqual([('col1', 'INTEGER', 'NULLABLE'), ('col2', 'STRING', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
-        self.assertEqual([('col1', 'FLOAT', 'NULLABLE'), ('col2', 'INTEGER', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
 
-    def test_create_tables_from_dict_overwrite(self):
-        # type: () -> None
-        """Test bq.Client.get_schema"""
-        # Create the dataset once.
-        self.client.create_tables_from_dict({
-            'empty_1':
-            [bigquery.SchemaField('col1', 'INTEGER'),
-             bigquery.SchemaField('col2', 'STRING')],
-            'empty_2':
-            [bigquery.SchemaField('col1', 'FLOAT'), bigquery.SchemaField('col2', 'INTEGER')]
-        },
-                replace_existing_tables=True)
+def test_query_needs_mod_fixed(self):
+    # type: () -> None
+    result = self.client.get_query_results('SELECT MOD(foo,4) FROM `{}`'
+                                           .format(self.src_table_name))
+    self.assertSetEqual(set(result), set([(0,), (1,)]))
 
-        # Create it again with a different schema. Make sure the changes take since it should have
-        # recreated the dataset.
-        self.client.create_tables_from_dict({
-            'empty_1':
-            [bigquery.SchemaField('col1_test1', 'INTEGER'),
-             bigquery.SchemaField('col2_test2', 'STRING')],
-            'empty_2':
-            [bigquery.SchemaField('col1_test1', 'FLOAT'),
-             bigquery.SchemaField('col2_test2', 'INTEGER')]
-        },
-                replace_existing_tables=True)
-        self.assertEqual([('col1_test1', 'INTEGER', 'NULLABLE'),
-                          ('col2_test2', 'STRING', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
-        self.assertEqual([('col1_test1', 'FLOAT', 'NULLABLE'),
-                          ('col2_test2', 'INTEGER', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
 
-        # Try to create one of the tables again; it should raise a RuntimeError.
-        with self.assertRaises(RuntimeError):
-            self.client.create_tables_from_dict({
-                'empty_1':
-                [bigquery.SchemaField('col1', 'INTEGER'),
-                 bigquery.SchemaField('col2', 'STRING')],
-            },
-                    replace_existing_tables=False)
+def test_query_needs_wont_execute_in_sqlite_raises(self):
+    # type: () -> None
+    with self.assertRaises(RuntimeError):
+        self.client.get_query_results('bad query')
 
-        # Try to create a table not in the dataset. It should work fine.
-        self.client.create_tables_from_dict({
-            'empty_3':
-            [bigquery.SchemaField('col1', 'INTEGER'),
-             bigquery.SchemaField('col2', 'STRING')],
-        },
-                replace_existing_tables=False)
-        self.assertEqual([('col1', 'INTEGER', 'NULLABLE'),
-                          ('col2', 'STRING', 'NULLABLE')],
-                         [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_3')])
 
-    def test_populate_table(self):
-        # type: () -> None
-        dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.populate_table(dest_table, [SchemaField('col1', 'INTEGER'),
-                                                SchemaField('col2', 'STRING')],
-                                   [(1, 'a'), ('2', 'c')])
-        result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
-        self.assertSetEqual(set(result), set([(1, 'a'), (2, 'c')]))
+def test_query_legacysql_raises(self):
+    # type: () -> None
+    with self.assertRaises(RuntimeError):
+        self.client.get_query_results(
+                'SELECT * FROM `{}`'.format(self.src_table_name), use_legacy_sql=True)
 
-    def test_populate_table_with_nulls(self):
-        # type: () -> None
-        dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.populate_table(dest_table, [SchemaField('col1', 'INTEGER'),
-                                                SchemaField('col2', 'STRING')],
-                                   [(1, None), (2, 'c')])
-        result = self.client.get_query_results(
-            'SELECT * FROM `' + dest_table + '` WHERE col2 IS NULL')
-        self.assertSetEqual(set(result), set([(1, None)]))
-
-    def test_populate_table_with_64_types(self):
-        # type: () -> None
-        dest_table = self.client.path('pop_table', delimiter=mock_bq.REPLACEMENT_DELIMITER)
-        self.client.populate_table(dest_table, [SchemaField('col1', 'INT64'),
-                                                SchemaField('col2', 'FLOAT64')],
-                                   [(1, 2.5), (20, 6.5)])
-        result = self.client.get_query_results('SELECT * FROM `' + dest_table + '`')
-        self.assertSetEqual(set(result), set([(1, 2.5), (20, 6.5)]))
-
-    def test_add_rows(self):
-        table_name = self.src_table_name + '_for_append'
-        self.client.populate_table(table_name,
-                                   FOO_BAR_BAZ_INTEGERS_SCHEMA,
-                                   [[1, 2, 3], [4, 5, 6]])
-
-        self.client.append_rows(table_name, [[7, 8, 9]])
-
-        self.assertEqual([(1,2,3), (4,5,6), (7,8,9)].sort(),
-                         self.client.get_query_results("SELECT * FROM " + table_name).sort())
-
-    def test_add_rows_bad_schema_raises(self):
-        table_name = self.src_table_name + '_for_append'
-        self.client.populate_table(table_name,
-                                   FOO_BAR_BAZ_INTEGERS_SCHEMA,
-                                   [[1, 2, 3], [4, 5, 6]])
-
-        with self.assertRaises(RuntimeError):
-            self.client.append_rows(table_name,
-                                    [[7, 8, 9]],
-                                    [SchemaField('foo', 'INTEGER'),
-                                     SchemaField('bar', 'INTEGER')])
 
 if __name__ == '__main__':
     bq_test_case.main()

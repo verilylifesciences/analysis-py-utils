@@ -45,7 +45,7 @@ from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobC
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from google.cloud.exceptions import NotFound
-from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient
+from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient, TABLE_PATH_DELIMITER
 
 # This is the default timeout for any BigQuery operations executed in this file, if no timeout is
 # specified in the constructor.
@@ -72,6 +72,9 @@ class Client(BigqueryBaseClient):
         self.max_wait_secs = max_wait_secs
         self.default_retry = retry.Retry(deadline=max_wait_secs)
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
+
+    def get_delimiter(self):
+        return TABLE_PATH_DELIMITER
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
@@ -351,8 +354,9 @@ class Client(BigqueryBaseClient):
             raise RuntimeError('Could not insert rows. Reported errors:\n' +
                                self._make_errors_readable(error_list))
 
-    def populate_table(self, table_path, schema, data=[], make_immediately_available=False):
-        # type: (str, List[SchemaField], Optional[List[Any]], Optional[bool]) -> None
+    def populate_table(self, table_path, schema, data=[], make_immediately_available=False,
+                       replace_existing_table=False):
+        # type: (str, List[SchemaField], Optional[List[Any]], Optional[bool], Optional[bool]) -> None
         """Creates a table and populates it with a list of rows.
 
         If make_immediately_available is False, the table will be created using streaming inserts.
@@ -360,7 +364,8 @@ class Client(BigqueryBaseClient):
         copying, so if you need that capability you should set make_immediately_available to True.
         https://cloud.google.com/bigquery/streaming-data-into-bigquery
 
-        If the table is already created, deletes and recreates the table before populating.
+        If the table is already created, it will raise a RuntimeError, unless replace_existing_table
+        is True.
 
         Args:
           table_path: A string of the form '<dataset id><delimiter><table name>'
@@ -370,11 +375,20 @@ class Client(BigqueryBaseClient):
           make_immediately_available: If False, the table won't immediately be available for
               copying or exporting, but will be available for querying. If True, after this
               operation returns, it will be available for copying and exporting too.
+          replace_existing_table: If set to True, the table at table_path will be deleted and
+              recreated if it's already present.
+
+        Raises:
+            RuntimeError if the table at table_path is already there and replace_existing_table
+                is False
         """
         # Use the Table object so we can pass through the schema.
         table = Table(self.get_table_reference_from_path(table_path), schema)
         if self.table_exists(table):
-            self.delete_table(table)
+            if replace_existing_table:
+                self.delete_table(table)
+            else:
+                raise RuntimeError('The table {} already exists.'.format(table_path))
         self.create_table(table)
 
         if data:
@@ -566,7 +580,7 @@ class Client(BigqueryBaseClient):
             dataset = dataset.reference
 
         try:
-            self.gclient.get_dataset(dataset)
+            self.gclient.get_dataset(dataset, retry=self.default_retry)
             return True
         except NotFound:
             return False
@@ -585,7 +599,7 @@ class Client(BigqueryBaseClient):
             table = table.reference
 
         try:
-            self.gclient.get_table(table)
+            self.gclient.get_table(table, retry=self.default_retry)
             return True
         except NotFound:
             return False
@@ -599,7 +613,7 @@ class Client(BigqueryBaseClient):
         Args:
             dataset: The Dataset or DatasetReference to delete.
         """
-        return self.gclient.delete_dataset(dataset)
+        self.gclient.delete_dataset(dataset, retry=self.default_retry)
 
     def delete_table(self,
                      table  # type: Table, TableReference
@@ -610,7 +624,7 @@ class Client(BigqueryBaseClient):
         Args:
             table: The Table or TableReference to delete.
         """
-        return self.gclient.delete_table(table)
+        self.gclient.delete_table(table, retry=self.default_retry)
 
     def create_dataset(self,
                        dataset  # type: DatasetReference, Dataset
@@ -625,7 +639,7 @@ class Client(BigqueryBaseClient):
         if isinstance(dataset, DatasetReference):
             dataset = Dataset(dataset)
 
-        return self.gclient.create_dataset(dataset)
+        self.gclient.create_dataset(dataset)
 
     def create_table(self,
                      table  # type: Table, TableReference
@@ -642,7 +656,7 @@ class Client(BigqueryBaseClient):
             # Normally you'd pass in the schema here upon Table instantiation
             table = Table(table)
 
-        return self.gclient.create_table(table)
+        self.gclient.create_table(table)
 
     def fetch_data_from_table(self,
                               table  # type: Table, TableReference
@@ -658,4 +672,4 @@ class Client(BigqueryBaseClient):
         Returns:
             List of tuples, where each tuple is a row of the table.
         """
-        return self.get_query_results('SELECT * FROM {}'.format(table.table_id))
+        return self.get_query_results('SELECT * FROM `{}`'.format(table.table_id))
