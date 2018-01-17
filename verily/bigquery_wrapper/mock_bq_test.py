@@ -19,6 +19,9 @@ from ddt import ddt
 from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq_test_case, bq_shared_tests
+# We use the standard BQ_PATH_DELIMITER throughout the test cases because all the functions in
+# mock BQ should take in real BQ paths and handle them correctly.
+from verily.bigquery_wrapper.bq_base import BQ_PATH_DELIMITER
 
 
 @ddt
@@ -30,7 +33,7 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
 
         super(MockBQTest, cls).create_mock_tables()
 
-        cls.dates_table_name = cls.client.path('dates', delimiter=cls.client.get_delimiter())
+        cls.dates_table_name = cls.client.path('dates', delimiter=BQ_PATH_DELIMITER)
         cls.client.populate_table(
                 cls.dates_table_name,
                 [SchemaField('foo', 'DATETIME'),
@@ -38,7 +41,7 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                  SchemaField('baz', 'INTEGER')],
                 [['1987-05-13 00:00:00', 2, 3], ['1950-01-01 00:00:00', 5, 6]], )
 
-        cls.str_table_name = cls.client.path('strings', delimiter=cls.client.get_delimiter())
+        cls.str_table_name = cls.client.path('strings', delimiter=BQ_PATH_DELIMITER)
         cls.client.populate_table(
                 cls.str_table_name,
                 [SchemaField('char1', 'STRING')],

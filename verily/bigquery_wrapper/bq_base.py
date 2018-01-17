@@ -16,7 +16,7 @@
 from __future__ import absolute_import
 
 # Bigquery uses . to separate project, dataset, and table parts.
-TABLE_PATH_DELIMITER = '.'
+BQ_PATH_DELIMITER = '.'
 
 # The call to datasets to list all tables requires you to set a maximum number of tables
 # (or use the unspecified API default). We always want to list all the tables so we set
@@ -47,6 +47,10 @@ class BigqueryBaseClient(object):
         self.maximum_billing_tier = maximum_billing_tier
         self.project_id = project_id
         self.dataset = default_dataset
+
+    def get_delimiter(self):
+        """ Returns the delimiter used to separate project, dataset, and table in a table path. """
+        raise NotImplementedError("get_delimiter is not implemented.")
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
@@ -139,8 +143,8 @@ class BigqueryBaseClient(object):
         """Delete a table within the current project.
 
         Args:
-          table_path: A string of the form '<dataset id><delimiter><table name>' or
-              '<project id><delimiter><dataset_id><delimiter><table_name>'
+          table_path: A string of the form '<dataset id>.<table name>' or
+              '<project id>.<dataset_id>.<table_name>'
         """
         raise NotImplementedError("delete_table_by_name is not implemented.")
 
@@ -192,8 +196,8 @@ class BigqueryBaseClient(object):
         is True.
 
         Args:
-          table_path: A string of the form '<dataset id><delimiter><table name>'
-              or '<project id><delimiter><dataset id><delimiter><table name>'.
+          table_path: A string of the form '<dataset id>.<table name>'
+              or '<project id>.<dataset id>.<table name>'.
           schema: A list of SchemaFields to represent the table's schema.
           data: A list of rows, each of which corresponds to a row to insert into the table.
           make_immediately_available: If False, the table won't immediately be available for
@@ -212,8 +216,8 @@ class BigqueryBaseClient(object):
         # type: (str, List[Tuple[Any]], Optional[List[SchemaField]]) -> None
         """Appends the rows contained in data to the table at table_path.
         Args:
-          table_path: A string of the form '<dataset id><delimiter><table name>'
-              or '<project id><delimiter><dataset id><delimiter><table name>'.
+          table_path: A string of the form '<dataset id>.<table name>'
+              or '<project id>.<dataset id>.<table name>'.
           data: A list of rows, each of which is a list of values.
           schema: Optionally, a list of SchemaFields to describe the
               table's expected schema. If this is present, it will check the table's schema against
@@ -276,7 +280,7 @@ class BigqueryBaseClient(object):
 
     def parse_table_path(self,
                          table_path,  # type: str
-                         delimiter=TABLE_PATH_DELIMITER,  # type: str
+                         delimiter=None,  # type: Optional[str]
                          replace_dashes=False  # type: Optional[bool]
                          ):
         # type: (...) -> (str, str, str)
@@ -286,14 +290,18 @@ class BigqueryBaseClient(object):
         constructor is returned.
 
         Args:
-            table_path: A table name or a path of the form 'dataset<delimiter>table' or
-                'project<delimiter>dataset<delimiter>table'.
+            table_path: A table name or a path of the form 'dataset.table' or
+                'project.dataset.table'.
             delimiter: The delimiter used in the table path
             replace_dashes: Whether to replace dashes with underscores for BigQuery compatibility.
 
         Returns:
             Strings project, dataset, table.
         """
+        # If the delimiter isn't passed in, use the default for the implementation.
+        if not delimiter:
+            delimiter = self.get_delimiter()
+
         project_id = self.project_id
         dataset_id = self.dataset
         parts = table_path.split(delimiter)
@@ -315,7 +323,7 @@ class BigqueryBaseClient(object):
              table_path,  # type: str
              dataset_id=None,  # type: Optional[str]
              project_id=None,  # type: Optional[str]
-             delimiter=TABLE_PATH_DELIMITER,  # type: Optional[str]
+             delimiter=None,  # type: Optional[str]
              replace_dashes=False  # type: Optional[str]
              ):
         """Extend a table name to a full BigQuery path using the default project and dataset.
@@ -330,6 +338,11 @@ class BigqueryBaseClient(object):
         Returns:
             A complete path of the form project.dataset.table_name
         """
+
+        # If the delimiter isn't passed in, use the default for the implementation.
+        if not delimiter:
+            delimiter = self.get_delimiter()
+
         if not dataset_id:
             dataset_id = self.dataset
         if not project_id:

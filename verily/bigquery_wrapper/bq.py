@@ -45,7 +45,7 @@ from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobC
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from google.cloud.exceptions import NotFound
-from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient, TABLE_PATH_DELIMITER
+from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER
 
 # This is the default timeout for any BigQuery operations executed in this file, if no timeout is
 # specified in the constructor.
@@ -74,7 +74,8 @@ class Client(BigqueryBaseClient):
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
-        return TABLE_PATH_DELIMITER
+        """ Returns the delimiter used to separate project, dataset, and table in a table path. """
+        return BQ_PATH_DELIMITER
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
@@ -339,6 +340,7 @@ class Client(BigqueryBaseClient):
         error_list = []
         start = 0
         num_rows = len(data)
+
         # BigQuery has a limit of max 10k to insert per request
         while start < num_rows:
             end = start + MAX_ROWS_TO_INSERT
@@ -368,8 +370,8 @@ class Client(BigqueryBaseClient):
         is True.
 
         Args:
-          table_path: A string of the form '<dataset id><delimiter><table name>'
-              or '<project id><delimiter><dataset id><delimiter><table name>'.
+          table_path: A string of the form '<dataset id>.<table name>'
+              or '<project id>.<dataset id>.<table name>'.
           schema: A list of SchemaFields to represent the table's schema.
           data: A list of rows, each of which corresponds to a row to insert into the table.
           make_immediately_available: If False, the table won't immediately be available for

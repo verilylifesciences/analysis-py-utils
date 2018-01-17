@@ -27,7 +27,7 @@ import re
 
 from google.cloud.bigquery.schema import SchemaField
 from pysqlite2 import dbapi2 as sqlite3
-from verily.bigquery_wrapper.bq_base import (TABLE_PATH_DELIMITER,
+from verily.bigquery_wrapper.bq_base import (BQ_PATH_DELIMITER,
                                              BigqueryBaseClient)
 
 # SQLite only uses . to separate database and table, so we need a
@@ -36,7 +36,7 @@ from verily.bigquery_wrapper.bq_base import (TABLE_PATH_DELIMITER,
 # character. The change should be invisible to users except in debugging test
 # cases and tables with the delimiters replaced are never backparsed into Bigquery
 # tables so there's no danger in using a table path with a Z in it.
-REPLACEMENT_DELIMITER = 'Z'
+MOCK_DELIMITER = 'Z'
 
 TRUE_STR = 'True'
 FALSE_STR = 'False'
@@ -73,7 +73,15 @@ class Client(BigqueryBaseClient):
         self.table_map[default_dataset] = []
 
     def get_delimiter(self):
-        return REPLACEMENT_DELIMITER
+        return MOCK_DELIMITER
+
+    def _convert_to_mock_path(self, table_path):
+        """
+        Converts a table path from being delimited with BQ_PATH_DELIMITER to MOCK_DELIMITER.
+        """
+        table_project, dataset_id, table_name = self.parse_table_path(table_path,
+                                                                      delimiter=BQ_PATH_DELIMITER)
+        return self.path(table_name, dataset_id, table_project)
 
     @staticmethod
     def _bq_type_to_sqlite_type(typename):
@@ -114,12 +122,14 @@ class Client(BigqueryBaseClient):
         self.cursor.execute(self._reformat_query(query))
         return [x[0] for x in self.cursor.description]
 
-    def _create_table(self, table_path, schema_fields=None, schema_string=None):
+    def _create_table(self, standardized_path, schema_fields=None, schema_string=None):
         """ Creates a table in SQLite. Adds its path to the appropriate mappings.
         SQLite3 requires a schema string for table creation. If one isn't passed in, this
         function will use a dummy schema to create the table.
 
         Args:
+            standardized_path: The table path with real delimiters already replaced with
+                the mock delimiter (since this is a private function).
             schema_fields: A list of SchemaFields descrbing the table. If both schema_fields
                 and schema_string are present, schema_fields will take precedence.
             schema_string: A SQLite3 string describing the schema.
@@ -128,8 +138,7 @@ class Client(BigqueryBaseClient):
         """
         # Get the components of the table path and then parse them back into a
         # SQLite3 friendly path.
-        project, dataset, table_name = self.parse_table_path(table_path)
-        standardized_path = self.path(table_name, dataset, project, delimiter=REPLACEMENT_DELIMITER)
+        project, dataset, table_name = self.parse_table_path(standardized_path)
 
         # Make sure the project and dataset has already been explicitly created before
         # trying to make the table.
@@ -164,22 +173,18 @@ class Client(BigqueryBaseClient):
         """ Inserts a list of rows into a SQLite3 table.
 
         Args:
-            table_path: The path to the table to insert the data.
+            table_path: The path to the table to insert the data. The table path should already have
+                 real delimiters replaced with the mock delimiter since this is a private function.
             query_results: A list of tuples (or lists) representing the rows of data to be inserted.
         """
         # If there's no data to insert, just return.
         if len(data_list) == 0:
             return
 
-        # Get the components of the table path and then parse them back into a
-        # SQLIte3 friendly path.
-        project, dataset, table_name = self.parse_table_path(table_path)
-        standardized_path = self.path(table_name, dataset, project, delimiter=REPLACEMENT_DELIMITER)
-
         # Only insert rows with non-zero length.
         for row in [x for x in self._escape_row(data_list) if len(x)]:
             values_string = '(' + ','.join(row) + ')'
-            query = 'INSERT INTO {} VALUES {}'.format(standardized_path, values_string)
+            query = 'INSERT INTO {} VALUES {}'.format(table_path, values_string)
 
             try:
                 self.cursor.execute(query)
@@ -239,9 +244,9 @@ class Client(BigqueryBaseClient):
             for dataset in dataset_list:
                 for table in self.table_map[dataset]:
                     qualified_table = self.path(table, dataset, project,
-                                                delimiter=TABLE_PATH_DELIMITER, replace_dashes=False)
+                                                delimiter=BQ_PATH_DELIMITER, replace_dashes=False)
                     sanitized_table = self.path(table, dataset, project,
-                                                delimiter=REPLACEMENT_DELIMITER)
+                                                delimiter=MOCK_DELIMITER)
                     query = query.replace(qualified_table, sanitized_table)
 
         query = self._remove_query_prefix(query)
@@ -431,6 +436,8 @@ class Client(BigqueryBaseClient):
           RuntimeError if use_legacy_sql is true.
         """
 
+        table_path = self._convert_to_mock_path(table_path)
+
         if use_legacy_sql:
             raise RuntimeError("Legacy SQL is disallowed for this mock.")
 
@@ -513,10 +520,10 @@ class Client(BigqueryBaseClient):
 
         for table_name, schema in table_names_to_schemas.iteritems():
             table_path = self.path(table_name, dataset_id=dataset_id, project_id=self.project_id,
-                                   delimiter=REPLACEMENT_DELIMITER)
+                                   delimiter=MOCK_DELIMITER)
 
             if table_name in self.tables(dataset_id or self.dataset) and replace_existing_tables:
-                    self.delete_table_by_name(table_name)
+                    self.delete_table_by_name(self.path(table_name, delimiter=BQ_PATH_DELIMITER))
             self._create_table(table_path, schema_fields=schema)
 
     def create_dataset_by_name(self, name, expiration_hours=None):
@@ -548,7 +555,8 @@ class Client(BigqueryBaseClient):
         """
         if delete_all_tables:
             for table_name in list(self.tables(name)):
-                self.delete_table_by_name(self.path(table_name, delimiter=REPLACEMENT_DELIMITER))
+                self.delete_table_by_name(self.path(table_name, dataset_id=name,
+                                                    delimiter=BQ_PATH_DELIMITER))
 
         if len(self.tables(name)) > 0:
             raise RuntimeError('The dataset {} still contains tables: {}'
@@ -561,15 +569,16 @@ class Client(BigqueryBaseClient):
         """Delete a table within the current project.
 
         Args:
-          table_path: A string of the form '<dataset id><delimiter><table name>' or
-              '<project id><delimiter><dataset_id><delimiter><table_name>'
+          table_path: A string of the form '<dataset id>.<table name>' or
+              '<project id>.<dataset_id>.<table_name>'
         """
-        project, dataset, table_name = self.parse_table_path(table_path)
-        standardized_path = self.path(table_name, dataset, project, REPLACEMENT_DELIMITER)
+        _, dataset, table = self.parse_table_path(table_path, delimiter=BQ_PATH_DELIMITER)
+        standardized_path = self._convert_to_mock_path(table_path)
+
         self.cursor.execute('DROP TABLE ' + standardized_path)
         self.conn.commit()
 
-        self.table_map[dataset].remove(standardized_path)
+        self.table_map[dataset].remove(table)
 
     def tables(self, dataset_id):
         # type: (str) -> List[str]
@@ -583,7 +592,7 @@ class Client(BigqueryBaseClient):
         """
         table_ids = []
         for table_path in self.table_map[dataset_id]:
-            _, _, table_id = self.parse_table_path(table_path, delimiter=REPLACEMENT_DELIMITER)
+            _, _, table_id = self.parse_table_path(table_path)
             table_ids.append(table_id)
 
         return table_ids
@@ -602,7 +611,8 @@ class Client(BigqueryBaseClient):
           A list of SchemaFields representing the schema.
         """
         # schema rows are in the format (order, name, type, ...)
-        standardized_path = self.path(table_name, dataset_id, project_id, REPLACEMENT_DELIMITER)
+        standardized_path = self.path(table_name, dataset_id, project_id,
+                                      delimiter=MOCK_DELIMITER)
         # 'pragma' is SQLite's equivalent to DESCRIBE TABLE
         pragma_query = 'pragma table_info(\'' + standardized_path + '\')'
         single_row_query = 'SELECT * FROM ' + standardized_path + ' LIMIT 1'
@@ -645,8 +655,8 @@ class Client(BigqueryBaseClient):
         is True.
 
         Args:
-          table_path: A string of the form '<dataset id><delimiter><table name>'
-              or '<project id><delimiter><dataset id><delimiter><table name>'.
+          table_path: A string of the form '<dataset id>.<table name>'
+              or '<project id>.<dataset id>.<table name>'.
           schema: A list of SchemaFields to represent the table's schema.
           data: A list of rows, each of which corresponds to a row to insert into the table.
           make_immediately_available: If False, the table won't immediately be available for
@@ -659,7 +669,11 @@ class Client(BigqueryBaseClient):
             RuntimeError if the table at table_path is already there and replace_existing_table
                 is False
         """
-        _, dataset, table_name = self.parse_table_path(table_path, TABLE_PATH_DELIMITER)
+        _, dataset, table_name = self.parse_table_path(table_path,
+                                                       delimiter=BQ_PATH_DELIMITER)
+
+        table_path = self._convert_to_mock_path(table_path)
+
         tables_in_dataset = self.table_map[dataset]
 
         schema_field_list = [x.name + ' ' + self._bq_type_to_sqlite_type(x.field_type)
@@ -668,7 +682,7 @@ class Client(BigqueryBaseClient):
 
         if table_name in tables_in_dataset:
             if replace_existing_table:
-                self.delete_table_by_name(table_name)
+                self.delete_table_by_name(table_path)
             else:
                 raise RuntimeError('The table {} already exists.'.format(table_path))
 
@@ -690,7 +704,9 @@ class Client(BigqueryBaseClient):
                 already-created table represented by table_path
         """
         table_project, dataset_id, table_name = self.parse_table_path(table_path,
-                                                                      delimiter=REPLACEMENT_DELIMITER)  # noqa
+                                                                      delimiter=BQ_PATH_DELIMITER)
+        table_path = self._convert_to_mock_path(table_path)
+
         if table_name not in self.tables(dataset_id):
             raise RuntimeError("The table " + table_name + " doesn't exist.")
         if schema is not None:

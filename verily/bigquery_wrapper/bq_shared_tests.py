@@ -6,6 +6,9 @@ from ddt import data, ddt, unpack
 from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq_test_case
+# We use the standard BQ_PATH_DELIMITER throughout the test cases because all the functions in
+# mock BQ should take in real BQ paths and handle them correctly.
+from verily.bigquery_wrapper.bq_base import BQ_PATH_DELIMITER
 
 LONG_TABLE_LENGTH = 200000
 
@@ -26,13 +29,13 @@ class BQSharedTests(bq_test_case.BQTestCase):
     def create_mock_tables(cls):
         # type: () -> None
         """Create mock tables"""
-        cls.src_table_name = cls.client.path('tmp', delimiter=cls.client.get_delimiter())
+        cls.src_table_name = cls.client.path('tmp', delimiter=BQ_PATH_DELIMITER)
         cls.client.populate_table(
                 cls.src_table_name,
                 FOO_BAR_BAZ_INTEGERS_SCHEMA,
                 [[1, 2, 3], [4, 5, 6]], )
 
-        cls.long_table_name = cls.client.path('long_table', delimiter=cls.client.get_delimiter())
+        cls.long_table_name = cls.client.path('long_table', delimiter=BQ_PATH_DELIMITER)
         cls.client.populate_table(cls.long_table_name, [
             SchemaField('foo', 'INTEGER'),
             ], [[1]] * LONG_TABLE_LENGTH)
@@ -60,7 +63,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
     def test_create_table_from_query(self):
         # type: () -> None
-        dest_table = self.client.path('tmp2', delimiter=self.client.get_delimiter())
+        dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
         self.client.create_table_from_query('SELECT * FROM `{}`'.format(self.src_table_name),
                                             dest_table)
         result = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_table))
@@ -162,7 +165,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
     def test_populate_table_with_nulls(self):
         # type: () -> None
-        dest_table = self.client.path('pop_table_nulls', delimiter=self.client.get_delimiter())
+        dest_table = self.client.path('pop_table_nulls', delimiter=BQ_PATH_DELIMITER)
         self.client.populate_table(dest_table, [SchemaField('col1', 'INTEGER'),
                                                 SchemaField('col2', 'STRING')],
                                    [(1, None), (2, 'c')],
@@ -175,7 +178,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
     def test_populate_table_with_64_types(self):
         # type: () -> None
-        dest_table = self.client.path('pop_table_64types', delimiter=self.client.get_delimiter())
+        dest_table = self.client.path('pop_table_64types', delimiter=BQ_PATH_DELIMITER)
         self.client.populate_table(dest_table,
                                    [SchemaField('col1', 'INT64'),
                                     SchemaField('col2', 'FLOAT64')],
@@ -184,19 +187,22 @@ class BQSharedTests(bq_test_case.BQTestCase):
         result = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_table))
         self.assertSetEqual(set(result), set([(1, 2.5), (20, 6.5)]))
 
-    def test_add_rows(self):
+    def test_append_rows(self):
         table_name = self.src_table_name + '_for_append'
+        table_path = self.client.path(table_name, delimiter=BQ_PATH_DELIMITER)
+
         self.client.populate_table(table_name,
                                    FOO_BAR_BAZ_INTEGERS_SCHEMA,
-                                   [[1, 2, 3], [4, 5, 6]])
+                                   [[1, 2, 3], [4, 5, 6]],
+                                   make_immediately_available=True)
 
-        self.client.append_rows(table_name, [[7, 8, 9]])
+        self.client.append_rows(table_path, [[7, 8, 9]])
 
         self.assertSetEqual(set([(1, 2, 3), (4, 5, 6), (7, 8, 9)]),
                             set(self.client.get_query_results('SELECT * FROM `{}`'
                                                               .format(table_name))))
 
-    def test_add_rows_bad_schema_raises(self):
+    def test_append_rows_bad_schema_raises(self):
         table_name = self.src_table_name + '_for_append'
         self.client.populate_table(table_name,
                                    FOO_BAR_BAZ_INTEGERS_SCHEMA,
@@ -240,7 +246,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
     def test_delete_dataset_with_tables_raises(self):
         # type: () -> None
         """Test that deleting a dataset with existing tables will raise an exception."""
-        dest_table = self.client.path('tmp2', delimiter=self.client.get_delimiter())
+        dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
         self.client.create_table_from_query('SELECT * FROM `{}`'.format(self.src_table_name),
                                             dest_table)
 
@@ -252,7 +258,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         """Test that we can use DeleteDataset to delete all the tables and the dataset. """
         temp_dataset_name = self.dataset_name + 'dataset_with_tables'
         self.client.create_dataset_by_name(temp_dataset_name)
-        dest_table = self.client.path('to_be_deleted', delimiter=self.client.get_delimiter())
+        dest_table = self.client.path('to_be_deleted', delimiter=BQ_PATH_DELIMITER)
         self.client.create_table_from_query('SELECT * FROM `{}`'.format(self.src_table_name),
                                             dest_table)
 
