@@ -59,12 +59,23 @@ class BQTestCase(unittest.TestCase):
     backed by SQLite.
     """
 
+    # If the FORCE_USE_REAL_BQ_FOR_TESTS environment variable is set to anything but empty then it
+    # will force all testing BigQuery clients to be real BigQuery, overriding any that are set
+    # to use mock BigQuery.
+    FORCE_USE_REAL_BQ = os.environ.get('FORCE_USE_REAL_BQ_FOR_TESTS')
+
     TEST_PROJECT = os.getenv('TEST_PROJECT')
     tables_created_in_constructor = []
 
     @classmethod
     def setUpClass(cls, use_mocks=False):
-        cls.use_mocks = use_mocks
+
+        force_use_real_bq = bool(cls.FORCE_USE_REAL_BQ)
+        if force_use_real_bq:
+            log = logging.getLogger("BQTestCase")
+            log.warning('Forcing test to run in real BigQuery.')
+
+        cls.use_mocks = False if force_use_real_bq else use_mocks
         cls.dataset_name = (datetime.datetime.utcnow().strftime("test_%Y_%m_%d_%H_%M_") +
                             str(random.SystemRandom().randint(1000, 9999)))
         if use_mocks:
