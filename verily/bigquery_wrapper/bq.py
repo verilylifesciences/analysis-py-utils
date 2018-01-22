@@ -178,7 +178,8 @@ class Client(BigqueryBaseClient):
                 creation already exist
         """
 
-        dataset_ref = DatasetReference(self.project_id, dataset_id if dataset_id else self.dataset)
+        dataset_ref = DatasetReference(self.project_id,
+                                       dataset_id if dataset_id else self.default_dataset_id)
 
         # If the flag isn't set to replace existing tables, raise an error if any tables we're
         # trying to create already exist.
@@ -499,7 +500,7 @@ class Client(BigqueryBaseClient):
             or the destination dataset does not exist
         """
 
-        destination_dataset = destination_dataset or self.dataset
+        destination_dataset = destination_dataset or self.default_dataset_id
         destination_project = destination_project or self.project_id
 
         dataset_ref = DatasetReference(destination_project, destination_dataset)

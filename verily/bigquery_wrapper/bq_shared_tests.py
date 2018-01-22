@@ -87,10 +87,10 @@ class BQSharedTests(bq_test_case.BQTestCase):
             })
         self.assertEqual([('col1', 'INTEGER', 'NULLABLE'), ('col2', 'STRING', 'NULLABLE')],
                          [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
+                          for x in self.client.get_schema(self.default_test_dataset_id, 'empty_1')])
         self.assertEqual([('col1', 'FLOAT', 'NULLABLE'), ('col2', 'INTEGER', 'NULLABLE')],
                          [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
+                          for x in self.client.get_schema(self.default_test_dataset_id, 'empty_2')])
 
     def test_create_tables_from_dict_overwrite(self):
         # type: () -> None
@@ -118,11 +118,11 @@ class BQSharedTests(bq_test_case.BQTestCase):
         self.assertEqual([('col1_test1', 'INTEGER', 'NULLABLE'),
                           ('col2_test2', 'STRING', 'NULLABLE')],
                          [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_1')])
+                          for x in self.client.get_schema(self.default_test_dataset_id, 'empty_1')])
         self.assertEqual([('col1_test1', 'FLOAT', 'NULLABLE'),
                           ('col2_test2', 'INTEGER', 'NULLABLE')],
                          [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_2')])
+                          for x in self.client.get_schema(self.default_test_dataset_id, 'empty_2')])
 
         # Try to create one of the tables again; it should raise a RuntimeError.
         with self.assertRaises(RuntimeError):
@@ -143,7 +143,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         self.assertEqual([('col1', 'INTEGER', 'NULLABLE'),
                           ('col2', 'STRING', 'NULLABLE')],
                          [(x.name, x.field_type, x.mode)
-                          for x in self.client.get_schema(self.dataset_name, 'empty_3')])
+                          for x in self.client.get_schema(self.default_test_dataset_id, 'empty_3')])
 
     @data((True,), (False,))
     @unpack
@@ -200,6 +200,8 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
         self.client.append_rows(table_path, [[7, 8, 9]])
 
+        # TODO(Issue 9): Implement a make_immediately_available flag for append_rows so that we
+        # don't have to do this in tests.
         # There is a "few seconds" (according to the documentation) delay between when the streaming
         # insert completes and when it is available for querying.
         time.sleep(10)
@@ -223,13 +225,13 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
     def test_copy_table(self):
         source_table_path = self.src_table_name
-        dest_table_path = self.client.path('copied_table', self.dataset_name,
+        dest_table_path = self.client.path('copied_table', self.default_test_dataset_id,
                                            self.client.project_id,
                                            delimiter=BQ_PATH_DELIMITER)
 
         self.client.copy_table(source_table_path,
                                'copied_table',
-                               destination_dataset=self.dataset_name,
+                               destination_dataset=self.default_test_dataset_id,
                                destination_project=self.client.project_id,
                                replace_existing_table=True)
 
@@ -269,25 +271,27 @@ class BQSharedTests(bq_test_case.BQTestCase):
         delim = self.client.get_delimiter()
 
         table_name = 'my_table'
-        table_path = ('{}.{}.{}'.format(self.TEST_PROJECT, self.dataset_name, table_name)
+        table_path = ('{}.{}.{}'.format(self.TEST_PROJECT, self.default_test_dataset_id, table_name)
                       .replace('.', delim))
         mock_path = ('{}.{}.{}'.format('my_project', 'my_dataset', table_name)
                      .replace('.', delim))
 
         self.assertEqual(table_path, self.client.path('my_table', delimiter=delim))
-        self.assertEqual(table_path, self.client.path(self.dataset_name + delim + table_name,
-                                                      delimiter=delim))
+        self.assertEqual(table_path,
+                         self.client.path(self.default_test_dataset_id + delim + table_name,
+                                          delimiter=delim))
         self.assertEqual(table_path, self.client.path(table_path, delimiter=delim))
         self.assertEqual(mock_path, self.client.path(table_name, dataset_id='my_dataset',
                                                      project_id='my_project',
                                                      delimiter=delim))
 
-        self.assertEqual((self.TEST_PROJECT, self.dataset_name, table_name),
+        self.assertEqual((self.TEST_PROJECT, self.default_test_dataset_id, table_name),
                          self.client.parse_table_path(table_path, delimiter=delim))
-        self.assertEqual((self.TEST_PROJECT, self.dataset_name, table_name),
-                         self.client.parse_table_path(self.dataset_name + delim + table_name,
-                                                      delimiter=delim))
-        self.assertEqual((self.TEST_PROJECT, self.dataset_name, table_name),
+        self.assertEqual((self.TEST_PROJECT, self.default_test_dataset_id, table_name),
+                         self.client.parse_table_path(
+                             self.default_test_dataset_id + delim + table_name,
+                             delimiter=delim))
+        self.assertEqual((self.TEST_PROJECT, self.default_test_dataset_id, table_name),
                          self.client.parse_table_path(table_name,
                                                       delimiter=delim))
 
@@ -299,16 +303,16 @@ class BQSharedTests(bq_test_case.BQTestCase):
                                             dest_table)
 
         with self.assertRaises(Exception):
-            self.client.delete_dataset_by_name(self.dataset_name)
+            self.client.delete_dataset_by_name(self.default_test_dataset_id)
 
     def test_force_delete_dataset_with_tables(self):
         # type: () -> None
         """Test that we can use DeleteDataset to delete all the tables and the dataset. """
-        temp_dataset_name = self.dataset_name + 'dataset_with_tables'
-        self.client.create_dataset_by_name(temp_dataset_name)
+        temp_default_test_dataset_id = self.default_test_dataset_id + 'dataset_with_tables'
+        self.client.create_dataset_by_name(temp_default_test_dataset_id)
         dest_table = self.client.path('to_be_deleted', delimiter=BQ_PATH_DELIMITER)
         self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
                                             dest_table)
 
-        self.client.delete_dataset_by_name(temp_dataset_name, True)
-        self.assertTrue(temp_dataset_name not in self.client.get_datasets())
+        self.client.delete_dataset_by_name(temp_default_test_dataset_id, True)
+        self.assertTrue(temp_default_test_dataset_id not in self.client.get_datasets())

@@ -76,27 +76,27 @@ class BQTestCase(unittest.TestCase):
             log.warning('Forcing test to run in real BigQuery.')
 
         cls.use_mocks = False if force_use_real_bq else use_mocks
-        cls.dataset_name = (datetime.datetime.utcnow().strftime("test_%Y_%m_%d_%H_%M_") +
-                            str(random.SystemRandom().randint(1000, 9999)))
+        cls.default_test_dataset_id = (datetime.datetime.utcnow().strftime("test_%Y_%m_%d_%H_%M_") +
+                                       str(random.SystemRandom().randint(1000, 9999)))
         if use_mocks:
             cls.TEST_PROJECT = 'mock_bq_project'
-            cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.dataset_name)
+            cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
         else:
             if cls.TEST_PROJECT is None:
               raise ValueError("Environment variable 'TEST_PROJECT' is not set. "
                                "Set its value to be the project id in which you "
                                "wish to run test queries.")
-            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.dataset_name)
+            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
         # Make the tables in the test datasets expire after an hour.
-        cls.client.create_dataset_by_name(cls.dataset_name, expiration_hours=EXPIRATION_HOURS)
+        cls.client.create_dataset_by_name(cls.default_test_dataset_id, expiration_hours=EXPIRATION_HOURS)
         cls.create_mock_tables()
 
         # Get the tables present in the class before anything else runs.
-        cls.tables_created_in_constructor.extend(cls.client.tables(cls.dataset_name))
+        cls.tables_created_in_constructor.extend(cls.client.tables(cls.default_test_dataset_id))
 
     def tearDown(self):
         # After each test, delete the tables created apart from class setup.
-        current_tables = self.client.tables(self.dataset_name)
+        current_tables = self.client.tables(self.default_test_dataset_id)
         for table in current_tables:
             if table not in self.tables_created_in_constructor:
                 self.client.delete_table_by_name(table)
@@ -104,12 +104,13 @@ class BQTestCase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         try:
-            cls.client.delete_dataset_by_name(cls.dataset_name, delete_all_tables=True)
+            cls.client.delete_dataset_by_name(cls.default_test_dataset_id, delete_all_tables=True)
         # TODO(PM-980): This exception should probably be handled differently but I'm not sure how.
         except Exception as ex:
             log = logging.getLogger("BQTestCase")
             log.warning("Problem deleting dataset: " + str(ex) + ";"
-                        "Dataset contains tables: " + str(cls.client.tables(cls.dataset_name)))
+                        "Dataset contains tables: " + str(cls.client.tables(
+                    cls.default_test_dataset_id)))
 
     @classmethod
     def create_mock_tables(cls):

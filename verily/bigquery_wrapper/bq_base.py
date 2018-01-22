@@ -38,15 +38,15 @@ class BigqueryBaseClient(object):
 
     Args:
       project_id: The id of the project to associate with the client.
-      default_dataset: If specified, use this dataset as the default.
+      default_dataset_id: If specified, use this dataset as the default.
       maximum_billing_tier: The maximum billing tier of this client.
       default_max_api_call_tries: The maximum number of tries for any REST API call.
     """
 
-    def __init__(self, project_id, default_dataset=None, maximum_billing_tier=None):
+    def __init__(self, project_id, default_dataset_id=None, maximum_billing_tier=None):
         self.maximum_billing_tier = maximum_billing_tier
         self.project_id = project_id
-        self.dataset = default_dataset
+        self.default_dataset_id = default_dataset_id
 
     def get_delimiter(self):
         """ Returns the delimiter used to separate project, dataset, and table in a table path. """
@@ -212,6 +212,7 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("populate_table is not implemented.")
 
+    #TODO(Issue 9): Implement a make_immediately_available flag for this function.
     def append_rows(self, table_path, data, schema=None):
         # type: (str, List[Tuple[Any]], Optional[List[SchemaField]]) -> None
         """Appends the rows contained in data to the table at table_path.
@@ -331,9 +332,9 @@ class BigqueryBaseClient(object):
             delimiter = self.get_delimiter()
 
         project_id = self.project_id
-        dataset_id = self.dataset
+        dataset_id = self.default_dataset_id
         parts = table_path.split(delimiter)
-        if self.dataset and len(parts) == 1:
+        if self.default_dataset_id and len(parts) == 1:
             table_id = table_path
         elif len(parts) == 2:
             dataset_id, table_id = parts
@@ -372,7 +373,7 @@ class BigqueryBaseClient(object):
             delimiter = self.get_delimiter()
 
         if not dataset_id:
-            dataset_id = self.dataset
+            dataset_id = self.default_dataset_id
         if not project_id:
             project_id = self.project_id
 
@@ -511,17 +512,17 @@ class BigqueryBaseClient(object):
         Args:
             tables: A list of table IDs
             dataset: The dataset to check to see if the tables exist in. If not set, it will check
-                self.dataset.
+                self.default_dataset_id.
 
         Raises:
             RuntimeError if any table in tables appears in the dataset.
         """
         intersect = (set(tables)
-                     .intersection(self.tables(dataset_id or self.dataset)))
+                     .intersection(self.tables(dataset_id or self.default_dataset_id)))
         if len(intersect):
             raise RuntimeError('The tables {} that you requested to create already exist in '
                                'the dataset {}.',
-                               ','.join(intersect), dataset_id or self.dataset)
+                               ','.join(intersect), dataset_id or self.default_dataset_id)
 
 
 def is_job_done(job,  # type: google.cloud.bigquery.job._AsyncJob

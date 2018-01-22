@@ -522,7 +522,8 @@ class Client(BigqueryBaseClient):
             table_path = self.path(table_name, dataset_id=dataset_id, project_id=self.project_id,
                                    delimiter=MOCK_DELIMITER)
 
-            if table_name in self.tables(dataset_id or self.dataset) and replace_existing_tables:
+            if (table_name in self.tables(dataset_id or self.default_dataset_id)
+                    and replace_existing_tables):
                     self.delete_table_by_name(self.path(table_name, delimiter=BQ_PATH_DELIMITER))
             self._create_table(table_path, schema_fields=schema)
 
@@ -745,7 +746,7 @@ class Client(BigqueryBaseClient):
             or the destination dataset does not exist
         """
         destination_project = destination_project or self.project_id
-        destination_dataset = destination_dataset or self.dataset
+        destination_dataset = destination_dataset or self.default_dataset_id
 
         if destination_project not in self.project_map.keys():
             raise RuntimeError('Project {} does not exist.'.format(destination_project))
