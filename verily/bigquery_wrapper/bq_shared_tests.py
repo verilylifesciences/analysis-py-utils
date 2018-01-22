@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 
 import random
+import time
 
 from ddt import data, ddt, unpack
 from google.cloud.bigquery.schema import SchemaField
@@ -15,6 +16,8 @@ LONG_TABLE_LENGTH = 200000
 FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
                                SchemaField('bar', 'INTEGER'),
                                SchemaField('baz', 'INTEGER')]
+
+SELECT_ALL_FORMAT = 'SELECT * FROM `{}`'
 
 
 @ddt
@@ -43,7 +46,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
     def test_load_data(self):
         # type: () -> None
         """Test bq.Client.get_query_results"""
-        result = self.client.get_query_results('SELECT * FROM `{}`'.format(self.src_table_name))
+        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(self.src_table_name))
         self.assertSetEqual(set(result), set([(1, 2, 3), (4, 5, 6)]))
 
     @data((LONG_TABLE_LENGTH, 'Load all rows'), )
@@ -54,7 +57,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         Args:
             expected_length: Expected length of results to return
         """
-        result = self.client.get_query_results('SELECT * FROM `{}`'.format(self.long_table_name))
+        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(self.long_table_name))
 
         self.assertEqual(
                 len(result), expected_length,
@@ -64,9 +67,9 @@ class BQSharedTests(bq_test_case.BQTestCase):
     def test_create_table_from_query(self):
         # type: () -> None
         dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
-        self.client.create_table_from_query('SELECT * FROM `{}`'.format(self.src_table_name),
+        self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
                                             dest_table)
-        result = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_table))
+        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(dest_table))
         self.assertSetEqual(set(result), set([(1, 2, 3), (4, 5, 6)]))
         self.client.delete_table_by_name(dest_table)
 
@@ -91,7 +94,6 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
     def test_create_tables_from_dict_overwrite(self):
         # type: () -> None
-        """Test bq.Client.get_schema"""
         # Create the dataset once.
         self.client.create_tables_from_dict({
             'empty_1':
@@ -160,7 +162,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         # a sanity check for any runtime errors.
         if make_immediately_available:
             self.assertSetEqual(set([(1, 2, 3), (4, 5, 6)]),
-                                set(self.client.get_query_results('SELECT * FROM `{}`'
+                                set(self.client.get_query_results(SELECT_ALL_FORMAT
                                                                   .format(table_name))))
 
     def test_populate_table_with_nulls(self):
@@ -184,7 +186,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
                                     SchemaField('col2', 'FLOAT64')],
                                    [(1, 2.5), (20, 6.5)],
                                    make_immediately_available=True)
-        result = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_table))
+        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(dest_table))
         self.assertSetEqual(set(result), set([(1, 2.5), (20, 6.5)]))
 
     def test_append_rows(self):
@@ -198,9 +200,13 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
         self.client.append_rows(table_path, [[7, 8, 9]])
 
+        # There is a "few seconds" (according to the documentation) delay between when the streaming
+        # insert completes and when it is available for querying.
+        time.sleep(10)
+
         self.assertSetEqual(set([(1, 2, 3), (4, 5, 6), (7, 8, 9)]),
-                            set(self.client.get_query_results('SELECT * FROM `{}`'
-                                                              .format(table_name))))
+                            set(self.client.get_query_results(SELECT_ALL_FORMAT
+                                                              .format(table_path))))
 
     def test_append_rows_bad_schema_raises(self):
         table_name = self.src_table_name + '_for_append'
@@ -214,6 +220,48 @@ class BQSharedTests(bq_test_case.BQTestCase):
                                     [[7, 8, 9]],
                                     [SchemaField('foo', 'INTEGER'),
                                      SchemaField('bar', 'INTEGER')])
+
+    def test_copy_table(self):
+        source_table_path = self.src_table_name
+        dest_table_path = self.client.path('copied_table', self.dataset_name,
+                                           self.client.project_id,
+                                           delimiter=BQ_PATH_DELIMITER)
+
+        self.client.copy_table(source_table_path,
+                               'copied_table',
+                               destination_dataset=self.dataset_name,
+                               destination_project=self.client.project_id,
+                               replace_existing_table=True)
+
+        original = self.client.get_query_results(SELECT_ALL_FORMAT.format(source_table_path))
+        copied = self.client.get_query_results(SELECT_ALL_FORMAT.format(dest_table_path))
+
+        self.assertSetEqual(set(original), set(copied))
+
+    def test_copy_table_table_exists_raises(self):
+        source_table_path = self.src_table_name
+        source_project, source_dataset, source_table = self.client.parse_table_path(
+                source_table_path, delimiter=BQ_PATH_DELIMITER)
+
+        with self.assertRaises(RuntimeError):
+            self.client.copy_table(source_table_path,
+                                   source_table,
+                                   destination_project=source_project,
+                                   destination_dataset=source_dataset)
+
+    def test_copy_table_project_does_not_exist_raises(self):
+        with self.assertRaises(RuntimeError):
+            self.client.copy_table(self.src_table_name,
+                                   'copy',
+                                   destination_project='doesnotexist',
+                                   replace_existing_table=True)
+
+    def test_copy_table_dataset_does_not_exist_raises(self):
+        with self.assertRaises(RuntimeError):
+            self.client.copy_table(self.src_table_name,
+                                   'copy',
+                                   destination_dataset='doesnotexist',
+                                   replace_existing_table=True)
 
     def test_path(self):
         # type: () -> None
@@ -247,7 +295,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         # type: () -> None
         """Test that deleting a dataset with existing tables will raise an exception."""
         dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
-        self.client.create_table_from_query('SELECT * FROM `{}`'.format(self.src_table_name),
+        self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
                                             dest_table)
 
         with self.assertRaises(Exception):
@@ -259,7 +307,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         temp_dataset_name = self.dataset_name + 'dataset_with_tables'
         self.client.create_dataset_by_name(temp_dataset_name)
         dest_table = self.client.path('to_be_deleted', delimiter=BQ_PATH_DELIMITER)
-        self.client.create_table_from_query('SELECT * FROM `{}`'.format(self.src_table_name),
+        self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
                                             dest_table)
 
         self.client.delete_dataset_by_name(temp_dataset_name, True)

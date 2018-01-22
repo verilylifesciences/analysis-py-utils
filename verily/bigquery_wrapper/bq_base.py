@@ -230,6 +230,34 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("append_rows is not implemented.")
 
+    def copy_table(self, source_table_path,  # type: str
+                   destination_table_name,  # type: str
+                   destination_dataset=None,  # type: Optional[str]
+                   destination_project=None,  # type: Optional[str]
+                   replace_existing_table=False  # type: bool
+                   ):
+        # type: (...) -> None
+        """
+        Copies the table at source_table_path to the location
+        destination_project.destination_dataset.destination_table_name. If the destination project
+        or dataset aren't set, the class default will be used.
+
+        Args:
+            source_table_path: The path of the table to copy.
+            destination_table: The name of the table to copy to.
+            destination_dataset: The name of the destination dataset. If unset, the client default
+                dataset will be used.
+            destination_project: The name of the destination project. If unset, the client default
+                project will be used.
+            replace_existing_table: If True, if the destination table already exists, it will delete
+                it and copy the source table in its place.
+
+        Raises:
+            RuntimeError if the destination table already exists and replace_existing_table is False
+            or the destination dataset does not exist
+        """
+        raise NotImplementedError("copy_table is not implemented.")
+
     def export_table_to_bucket(self,
                                table_path,  # type: str
                                bucket_name,  # type: str

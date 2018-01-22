@@ -718,6 +718,57 @@ class Client(BigqueryBaseClient):
                                    .format('\n'.join(schema_diffs)))
         self._insert_list_into_table(table_path, data)
 
+    def copy_table(self, source_table_path,  # type: str
+                   destination_table_name,  # type: str
+                   destination_dataset=None,  # type: Optional[str]
+                   destination_project=None,  # type: Optional[str]
+                   replace_existing_table=False  # type: bool
+                   ):
+        # type: (...) -> None
+        """
+        Copies the table at source_table_path to the location
+        destination_project.destination_dataset.destination_table_name. If the destination project
+        or dataset aren't set, the class default will be used.
+
+        Args:
+            source_table_path: The path of the table to copy.
+            destination_table_name: The name of the table to copy to.
+            destination_dataset: The name of the destination dataset. If unset, the client default
+                dataset will be used.
+            destination_project: The name of the destination project. If unset, the client default
+                project will be used.
+            replace_existing_table: If True, if the destination table already exists, it will delete
+                it and copy the source table in its place.
+
+        Raises:
+            RuntimeError if the destination table already exists and replace_existing_table is False
+            or the destination dataset does not exist
+        """
+        destination_project = destination_project or self.project_id
+        destination_dataset = destination_dataset or self.dataset
+
+        if destination_project not in self.project_map.keys():
+            raise RuntimeError('Project {} does not exist.'.format(destination_project))
+
+        if destination_dataset not in self.project_map[destination_project]:
+            raise RuntimeError('Dataset {} does not exist in project {}.'
+                               .format(destination_dataset, destination_project))
+
+        if destination_table_name in self.table_map[destination_dataset]:
+            if replace_existing_table:
+                self.delete_table_by_name(self.path(destination_table_name,
+                                                    destination_dataset,
+                                                    destination_project,
+                                                    delimiter=BQ_PATH_DELIMITER))
+            else:
+                raise RuntimeError('The table {} already exists in dataset {}.'
+                                   .format(destination_table_name, destination_dataset))
+
+        self.create_table_from_query('SELECT * FROM `{}`'.format(
+                self._convert_to_mock_path(source_table_path)),
+                self.path(destination_table_name, destination_dataset, destination_project,
+                          delimiter=BQ_PATH_DELIMITER))
+
     def dataset_exists(self,
                        dataset  # type: Dataset, DatasetReference
                        ):
