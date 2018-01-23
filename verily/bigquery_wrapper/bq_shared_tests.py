@@ -1,12 +1,13 @@
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
-import random
 import time
 
 from ddt import data, ddt, unpack
 from google.cloud.bigquery.schema import SchemaField
 
 from verily.bigquery_wrapper import bq_test_case
+
 # We use the standard BQ_PATH_DELIMITER throughout the test cases because all the functions in
 # mock BQ should take in real BQ paths and handle them correctly.
 from verily.bigquery_wrapper.bq_base import BQ_PATH_DELIMITER
@@ -16,9 +17,6 @@ LONG_TABLE_LENGTH = 200000
 FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
                                SchemaField('bar', 'INTEGER'),
                                SchemaField('baz', 'INTEGER')]
-
-SELECT_ALL_FORMAT = 'SELECT * FROM `{}`'
-
 
 @ddt
 class BQSharedTests(bq_test_case.BQTestCase):
@@ -46,8 +44,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
     def test_load_data(self):
         # type: () -> None
         """Test bq.Client.get_query_results"""
-        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(self.src_table_name))
-        self.assertSetEqual(set(result), set([(1, 2, 3), (4, 5, 6)]))
+        self.expect_table_contains(self.src_table_name, [(1, 2, 3), (4, 5, 6)])
 
     @data((LONG_TABLE_LENGTH, 'Load all rows'), )
     @unpack
@@ -57,20 +54,17 @@ class BQSharedTests(bq_test_case.BQTestCase):
         Args:
             expected_length: Expected length of results to return
         """
-        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(self.long_table_name))
-
-        self.assertEqual(
-                len(result), expected_length,
-                test_description + '; expected: ' + str(expected_length) +
-                ' actual: ' + str(len(result)))
+        self.expect_table_contains(self.long_table_name, [(1, )] * expected_length)
 
     def test_create_table_from_query(self):
         # type: () -> None
         dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
-        self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
+        self.client.create_table_from_query(bq_test_case.SELECT_ALL_FORMAT
+                                            .format(self.src_table_name),
                                             dest_table)
-        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(dest_table))
-        self.assertSetEqual(set(result), set([(1, 2, 3), (4, 5, 6)]))
+
+        self.expect_table_contains(dest_table, [(1, 2, 3), (4, 5, 6)])
+
         self.client.delete_table_by_name(dest_table)
 
     def test_create_tables_from_dict(self):
@@ -161,9 +155,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         # results might not be immediately available). At least this runs through the code to give
         # a sanity check for any runtime errors.
         if make_immediately_available:
-            self.assertSetEqual(set([(1, 2, 3), (4, 5, 6)]),
-                                set(self.client.get_query_results(SELECT_ALL_FORMAT
-                                                                  .format(table_name))))
+            self.expect_table_contains(table_name, [(1, 2, 3), (4, 5, 6)])
 
     def test_populate_table_with_nulls(self):
         # type: () -> None
@@ -186,8 +178,8 @@ class BQSharedTests(bq_test_case.BQTestCase):
                                     SchemaField('col2', 'FLOAT64')],
                                    [(1, 2.5), (20, 6.5)],
                                    make_immediately_available=True)
-        result = self.client.get_query_results(SELECT_ALL_FORMAT.format(dest_table))
-        self.assertSetEqual(set(result), set([(1, 2.5), (20, 6.5)]))
+
+        self.expect_table_contains(dest_table, [(1, 2.5), (20, 6.5)])
 
     def test_append_rows(self):
         table_name = self.src_table_name + '_for_append'
@@ -200,15 +192,11 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
         self.client.append_rows(table_path, [[7, 8, 9]])
 
-        # TODO(Issue 9): Implement a make_immediately_available flag for append_rows so that we
-        # don't have to do this in tests.
         # There is a "few seconds" (according to the documentation) delay between when the streaming
         # insert completes and when it is available for querying.
         time.sleep(10)
 
-        self.assertSetEqual(set([(1, 2, 3), (4, 5, 6), (7, 8, 9)]),
-                            set(self.client.get_query_results(SELECT_ALL_FORMAT
-                                                              .format(table_path))))
+        self.expect_table_contains(table_path, [(1, 2, 3), (4, 5, 6), (7, 8, 9)])
 
     def test_append_rows_bad_schema_raises(self):
         table_name = self.src_table_name + '_for_append'
@@ -235,10 +223,9 @@ class BQSharedTests(bq_test_case.BQTestCase):
                                destination_project=self.client.project_id,
                                replace_existing_table=True)
 
-        original = self.client.get_query_results(SELECT_ALL_FORMAT.format(source_table_path))
-        copied = self.client.get_query_results(SELECT_ALL_FORMAT.format(dest_table_path))
-
-        self.assertSetEqual(set(original), set(copied))
+        original = self.client.get_query_results(bq_test_case.SELECT_ALL_FORMAT
+                                                 .format(source_table_path))
+        self.expect_table_contains(dest_table_path, original)
 
     def test_copy_table_table_exists_raises(self):
         source_table_path = self.src_table_name
@@ -299,7 +286,8 @@ class BQSharedTests(bq_test_case.BQTestCase):
         # type: () -> None
         """Test that deleting a dataset with existing tables will raise an exception."""
         dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
-        self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
+        self.client.create_table_from_query(bq_test_case.SELECT_ALL_FORMAT
+                                            .format(self.src_table_name),
                                             dest_table)
 
         with self.assertRaises(Exception):
@@ -311,7 +299,8 @@ class BQSharedTests(bq_test_case.BQTestCase):
         temp_default_test_dataset_id = self.default_test_dataset_id + 'dataset_with_tables'
         self.client.create_dataset_by_name(temp_default_test_dataset_id)
         dest_table = self.client.path('to_be_deleted', delimiter=BQ_PATH_DELIMITER)
-        self.client.create_table_from_query(SELECT_ALL_FORMAT.format(self.src_table_name),
+        self.client.create_table_from_query(bq_test_case.SELECT_ALL_FORMAT.format(self
+                                            .src_table_name),
                                             dest_table)
 
         self.client.delete_dataset_by_name(temp_default_test_dataset_id, True)

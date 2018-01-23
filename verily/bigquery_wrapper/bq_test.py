@@ -13,6 +13,7 @@
 # limitations under the License.
 """Unit tests for the bq library."""
 
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 import random
@@ -90,7 +91,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
             self.client.export_table_to_bucket(self.src_table_name, self.temp_bucket_name,
                                                'dummy_file', out_fmt, compression)
 
-    # TODO: Add test to export tables from a project different from self.client.project_id
+    # TODO (Issue 8): Add test to export tables from a project different from self.client.project_id
     @data(('csv', True, '', '', 'tmp.csv.gz', 'csv w/ gzip'),
           ('json', True, 'test', '', 'test/tmp.json.gz', 'json w/ gzip'),
           ('avro', False, '/test', '', 'test/tmp.avro', 'Avro w/o gzip'),
@@ -122,7 +123,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
                 isinstance(self.bucket.get_blob(expected_output_path), storage.Blob),
                 test_description)
 
-    # TODO: Add test to export schemas from a project different from self.client.project_id
+    # TODO(Issue 7): Add test to export schemas from a project different from self.client.project_id
     @data(('', '', 'tmp-schema.json', 'Export schema to root'),
           ('test', '', 'test/tmp-schema.json', 'Export schema to /test'),
           ('', 'ext', 'tmp_ext-schema.json', 'Export schema to root with extension'))

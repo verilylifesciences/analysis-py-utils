@@ -19,6 +19,7 @@ Sample usage:
     result = client.Query(query)
 """
 
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 import datetime
@@ -375,16 +376,16 @@ class Client(BigqueryBaseClient):
         return query
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
-        # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
-        """Returns a list of rows, each of which is a list of values.
+        # type: (str, Optional[Bool], Optional[int]) -> List[Tuple[Any]]
+        """Returns a list of rows, each of which is a tuple of values.
 
         Args:
             query: A string with a complete SQL query.
             max_results: Maximum number of results to return.
-            use_legacy_sql: Unused in this implementation
+            use_legacy_sql: If set, will raise a RuntimeError.
             max_wait_secs: Unused in this implementation
         Returns:
-            A list of lists of values..
+            A list of tuples of values.
         Raises:
             RuntimeError if use_legacy_sql is true.
         """
@@ -395,7 +396,6 @@ class Client(BigqueryBaseClient):
         rows = []
         for row in self.cursor.execute(self._reformat_query(query)):
             rows.append(tuple(Client._reformat_results(row)))
-
         return rows
 
     @staticmethod

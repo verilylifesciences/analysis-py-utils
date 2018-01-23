@@ -13,6 +13,7 @@
 # limitations under the License.
 """Base class for a library for interacting with BigQuery."""
 
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 # Bigquery uses . to separate project, dataset, and table parts.
@@ -53,8 +54,8 @@ class BigqueryBaseClient(object):
         raise NotImplementedError("get_delimiter is not implemented.")
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
-        # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
-        """Returns a list or rows, each of which is a list of values.
+        # type: (str, Optional[Bool], Optional[int]) -> List[Tuple[Any]]
+        """Returns a list or rows, each of which is a tuple of values.
 
         Args:
             query: A string with a complete SQL query.
@@ -63,7 +64,7 @@ class BigqueryBaseClient(object):
                 set, the class default will be used.
 
         Returns:
-            A list of lists of values.
+            A list of tuples of values.
         """
         raise NotImplementedError("get_query_results is not implemented.")
 

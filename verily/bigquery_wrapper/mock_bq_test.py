@@ -13,6 +13,7 @@
 # limitations under the License.
 """Unit tests for the bq library."""
 
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 from ddt import ddt
@@ -61,27 +62,28 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
 
     def test_query_needs_legacy_sql_prefix_removed(self):
         # type: () -> None
-        result = self.client.get_query_results('#legacySQL\nSELECT baz FROM `{}`'
-                                               .format(self.src_table_name))
-        self.assertSetEqual(set(result), set([(3,), (6,)]))
+        self.expect_query_result('#legacySQL\nSELECT baz FROM `{}`'.format(self.src_table_name),
+                                 [(3,), (6,)],
+                                 enforce_ordering=False)
 
     def test_query_needs_standard_sql_prefix_removed(self):
         # type: () -> None
-        result = self.client.get_query_results('#standardSQL\nSELECT baz FROM `{}`'
-                                               .format(self.src_table_name))
-        self.assertSetEqual(set(result), set([(3,), (6,)]))
+        self.expect_query_result('#standardSQL\nSELECT baz FROM `{}`' .format(self.src_table_name),
+                                 [(3,), (6,)],
+                                 enforce_ordering=False)
 
     def test_query_needs_division_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT (foo / bar) , baz FROM `{}`'
-                                               .format(self.src_table_name))
-        self.assertSetEqual(set(result), set([(0.5, 3), (0.8, 6)]))
+        self.expect_query_result('SELECT (foo / bar) , baz FROM `{}`' .format(self.src_table_name),
+                                 [(0.5, 3), (0.8, 6)],
+                                 enforce_ordering=False)
 
     def test_query_needs_concat_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT CONCAT(foo || bar) , baz FROM `{}`'
-                                               .format(self.src_table_name))
-        self.assertSetEqual(set(result), set([('12', 3), ('45', 6)]))
+        self.expect_query_result('SELECT CONCAT(foo || bar) , baz FROM `{}`'
+                                 .format(self.src_table_name),
+                                 [('12', 3), ('45', 6)],
+                                 enforce_ordering=False)
 
     def test_query_needs_format_fixed(self):
         # type: () -> None
@@ -89,52 +91,49 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
         # for all tests except this one.
         import sqlite3
         if sqlite3.sqlite_version != '3.8.2':
-            result = self.client.get_query_results('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
-                                                   + 'FROM `{}`'.format(self.src_table_name))
-            self.assertSetEqual(set(result), set([('1 and 2', 3), ('4 and 5', 6)]))
+            self.expect_query_result('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
+                                                   + 'FROM `{}`'.format(self.src_table_name),
+                                     [('1 and 2', 3), ('4 and 5', 6)],
+                                     enforce_ordering=False)
 
     def test_query_needs_extract_year_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT EXTRACT(YEAR FROM foo) FROM `{}`'
-                                               .format(self.dates_table_name))
-        self.assertSetEqual(set(result), set([(1987,), (1950,)]))
+        self.expect_query_result('SELECT EXTRACT(YEAR FROM foo) FROM `{}`'
+                                 .format(self.dates_table_name),
+                                 [(1987,), (1950,)],
+                                 enforce_ordering=False)
 
     def test_query_needs_extract_month_fixed(self):
         # type: () -> None
-        result = self.client.get_query_results('SELECT EXTRACT(MONTH FROM foo) FROM `{}`'
-                                               .format(self.dates_table_name))
-        self.assertSetEqual(set(result), set([(5,), (1,)]))
-
+        self.expect_query_result('SELECT EXTRACT(MONTH FROM foo) FROM `{}`'
+                                 .format(self.dates_table_name),
+                                 [(5,), (1,)],
+                                 enforce_ordering=False)
 
 def test_query_needs_substr_fixed(self):
     # type: () -> None
-    result = self.client.get_query_results(
-            'SELECT SUBSTR(char1,0,2) FROM `{}`'.format(self.str_table_name))
-    self.assertSetEqual(set(result), set([(u'12',), (u'45',)]))
-
+    self.expect_query_result('SELECT SUBSTR(char1,0,2) FROM `{}`'.format(self.str_table_name),
+                             [('12',), ('45',)],
+                             enforce_ordering=False)
 
 def test_query_needs_farm_fingerprint_fixed(self):
     # type: () -> None
-    result = self.client.get_query_results(
-            'SELECT FARM_FINGERPRINT(CONCAT(CAST(1),CAST(2))) FROM `{}`'
-            .format(self.src_table_name))
-    self.assertSetEqual(set(result), set([(0,)]))
-
+    self.expect_query_result('SELECT FARM_FINGERPRINT(CONCAT(CAST(1),CAST(2))) FROM `{}`'
+                             .format(self.src_table_name),
+                             [('0',),])
 
 def test_query_needs_farm_fingerprint_fixed_complex(self):
     # type: () -> None
-    result = self.client.get_query_results(
-            'SELECT FARM_FINGERPRINT(CONCAT(CAST(1 AS STRING),"/",CAST(2 AS STRING))) FROM `{}`'
-            .format(self.src_table_name))
-    self.assertSetEqual(set(result), set([(0,)]))
-
+    self.expect_query_result('SELECT FARM_FINGERPRINT(CONCAT(CAST(1 AS STRING),"/",'
+                             'CAST(2 AS STRING))) FROM `{}`'
+                             .format(self.src_table_name),
+                             [('0',),])
 
 def test_query_needs_mod_fixed(self):
     # type: () -> None
-    result = self.client.get_query_results('SELECT MOD(foo,4) FROM `{}`'
-                                           .format(self.src_table_name))
-    self.assertSetEqual(set(result), set([(0,), (1,)]))
-
+    self.expect_query_result('SELECT MOD(foo,4) FROM `{}`'.format(self.src_table_name),
+                             [(0,), (1,)],
+                             enforce_ordering=False)
 
 def test_query_needs_wont_execute_in_sqlite_raises(self):
     # type: () -> None

@@ -14,6 +14,7 @@
 """This file contains utilities that are useful for working with pandas.
 """
 
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 import copy

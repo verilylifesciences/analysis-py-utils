@@ -17,17 +17,9 @@ Sample usage:
 
     client = bq.Client(project_id)
     result = client.Query(query)
-
-NOTE: All API calls to BigQuery that call the REST API should be wrapped in execute_with_retries.
-This is because these calls are prone to failing randomly with 500 or 503 errors. You can see if
-something calls the REST API from the bq python client library:
-https://googlecloudplatform.github.io/google-cloud-python/stable/bigquery/usage.html
-In the documentation for each function, there should be a link to the REST API documentation if it
-is a REST API call.
 """
 
-# This is a workaround to address
-# https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 import cStringIO
@@ -78,8 +70,8 @@ class Client(BigqueryBaseClient):
         return BQ_PATH_DELIMITER
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
-        # type: (str, Optional[Bool], Optional[int]) -> List[List[Any]]
-        """Returns a list or rows, each of which is a list of values.
+        # type: (str, Optional[Bool], Optional[int]) -> List[Tuple[Any]]
+        """Returns a list or rows, each of which is a tuple of values.
 
         Args:
             query: A string with a complete SQL query.
@@ -88,7 +80,7 @@ class Client(BigqueryBaseClient):
                 set, the class default will be used.
 
         Returns:
-            A list of lists of values.
+            A list of tuples of values.
         """
         config = QueryJobConfig()
         if self.maximum_billing_tier:

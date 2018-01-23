@@ -18,6 +18,7 @@ down at the end. Subclasses should override create_mock_tables() to create
 temporary tables by calling bq.PopulateTable().
 """
 
+# Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
 import copy
@@ -51,6 +52,8 @@ EXPIRATION_HOURS = 1
 NP_TYPE_LOOKUP = {'STRING': str, 'INT64': np.int64, 'INTEGER': np.int64, 'DATE': str,
                   'TIMESTAMP': str, 'FLOAT64': np.float64, 'FLOAT': np.float64, 'BOOL': bool,
                   'BOOLEAN': bool}
+
+SELECT_ALL_FORMAT = 'SELECT * FROM `{}`'
 
 
 class BQTestCase(unittest.TestCase):
@@ -106,7 +109,7 @@ class BQTestCase(unittest.TestCase):
     def tearDownClass(cls):
         try:
             cls.client.delete_dataset_by_name(cls.default_test_dataset_id, delete_all_tables=True)
-        # TODO(PM-980): This exception should probably be handled differently but I'm not sure how.
+        # TODO(Issue 6): This exception should probably be handled differently but I'm not sure how.
         except Exception as ex:
             log = logging.getLogger("BQTestCase")
             log.warning("Problem deleting dataset: " + str(ex) + ";"
@@ -204,12 +207,26 @@ class BQTestCase(unittest.TestCase):
             return ''
         return comments_list[idx]
 
-    def expect_query_result(self, query, expected, comments=None):
+    def expect_table_contains(self, table_path, expected):
+        """
+        Checks whether the table at table_path contains exactly the rows in expected.
+
+        Args:
+            table_path: The table path to check
+            expected: The rows expected to be in table_path
+        """
+        query = SELECT_ALL_FORMAT.format(table_path)
+        self.expect_query_result(query, expected, enforce_ordering=False)
+
+    def expect_query_result(self, query, expected, enforce_ordering=True, comments=None):
         """Compiles the query, runs it and checks the results.
 
         Args:
           query: The query to execute.
           expected: A two dimensional array of query results to compare against.
+          enforce_ordering: If True, the rows must appear in the same order in the query results and
+              in the expected results. If False, then it will just check for count equality and then
+              for set equality between the two results.
           comments: list of comments, one per expected row.
         """
         if comments:
@@ -228,6 +245,11 @@ class BQTestCase(unittest.TestCase):
             len(expected), 'Expected {} rows of data, found {}.\n\n'
             'Expected:\n{}\n\nFound:\n{}'.format(
                 len(expected), len(results), _data_to_string(expected), _data_to_string(results)))
+
+        if not enforce_ordering:
+            self.assertSetEqual(set(results), set(expected))
+            return
+
         for i in range(len(results)):
             self.assertEqual(
                 len(results[i]),
@@ -281,7 +303,7 @@ class BQTestCase(unittest.TestCase):
                 else:
                     cast = str(col)
                 typecast_row.append(cast)
-            typecast_result.append(typecast_row)
+            typecast_result.append(tuple(typecast_row))
         return typecast_result
 
     @staticmethod
