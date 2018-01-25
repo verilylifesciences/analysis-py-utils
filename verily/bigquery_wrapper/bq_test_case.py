@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from google.cloud.bigquery.schema import SchemaField
+from typing import Optional
 
 from verily.bigquery_wrapper import bq as real_bq
 try:
@@ -322,8 +323,8 @@ class BQTestCase(unittest.TestCase):
         return values
 
     @classmethod
-    def _create_test_table(cls, table_name, schema_file, data_file, table_postfix=''):
-        # type: (str, str, str, str) -> ()
+    def _create_test_table(cls, table_name, schema_file, data_file=None, table_postfix=''):
+        # type: (str, str, Optional[str], str) -> ()
         """
         This method creates a table to be used in testing
 
@@ -331,11 +332,11 @@ class BQTestCase(unittest.TestCase):
             table_name: A string with the name of the table name to be added to resources
             schema_file: A string with the name of the schema file from which to build the test
                 table
-            data_file: A string describing the file with the data to use in testing
+            data_file: A string describing the file with the data to use in testing. If None,
+                create an empty table.
             table_postfix: A string to be added to the end of the table_name.
         """
-        # TODO(PM-1238): Move this to BQTestCase
-        data = cls._load_csv_with_schema(schema_file, data_file)
+        data = cls._load_csv_with_schema(schema_file, data_file) if data_file else []
         table_path = cls.table_path(table_name + table_postfix)
         with open(schema_file) as f:
             schema_json = json.load(f)
