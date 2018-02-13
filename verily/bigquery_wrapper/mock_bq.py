@@ -53,9 +53,15 @@ class Client(BigqueryBaseClient):
 
     Args:
       project_id: The id of the project to associate with the client.
+      default_dataset: The default dataset to use in function calls if none is explicitly provided.
+      maximum_billing_tier: Unused in this implementation.
+      print_before_and_after: If set to True, this will print out queries as passed in, then
+          print out the query after it's been reformatted to match appropriate SQLite conventions.
+          Helpful for debugging.
     """
 
-    def __init__(self, project_id, default_dataset=None, maximum_billing_tier=None):
+    def __init__(self, project_id, default_dataset=None, maximum_billing_tier=None,
+                 print_before_and_after=False):
         # SQLite does not allow dashes in table paths.
         formatted_project_id = project_id.replace('-', '_')
         super(Client, self).__init__(formatted_project_id, default_dataset, maximum_billing_tier)
@@ -72,6 +78,8 @@ class Client(BigqueryBaseClient):
 
         self.table_map = {}
         self.table_map[default_dataset] = []
+
+        self.print_before_and_after = print_before_and_after
 
     def get_delimiter(self):
         return MOCK_DELIMITER
@@ -210,7 +218,7 @@ class Client(BigqueryBaseClient):
             new_data_list.append(row_list)
         return new_data_list
 
-    def _reformat_query(self, query, print_before_and_after=True):
+    def _reformat_query(self, query):
         """Does a variety of transformations to reinterpret a BigQuery into a SQLite executable
         query.
 
@@ -227,14 +235,13 @@ class Client(BigqueryBaseClient):
 
         Args:
             query: The query to reformat
-            print_before_and_after: A boolean to indicate whether to print the query before and
-                after transformation. This is mostly for test debugging.
+
         Raises:
             RuntimeError: If the transformed query wouldn't execute in SQLite. If this happens, the
                 test author can either roll in whatever the missing transformation is into this
                 function, or choose to test on real BigQuery.
         """
-        if print_before_and_after:
+        if self.print_before_and_after:
             logging.info("ORIGINAL: " + query)
 
         # Remove backticks.
@@ -260,7 +267,7 @@ class Client(BigqueryBaseClient):
         query = self._transform_substr(query)
         query = self._transform_mod(query)
 
-        if print_before_and_after:
+        if self.print_before_and_after:
             logging.info("REFORMATTED: " + query)
 
         # If we don't end up with valid sqlite3, throw the exception here and print the query.
