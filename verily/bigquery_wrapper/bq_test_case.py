@@ -345,7 +345,7 @@ class BQTestCase(unittest.TestCase):
         return values
 
     @classmethod
-    def _create_test_table(cls, table_name, schema_file, data_file=None, table_postfix=''):
+    def create_test_table(cls, table_name, schema_file, data_file=None, table_postfix=''):
         # type: (str, str, Optional[str], str) -> ()
         """
         This method creates a table to be used in testing
@@ -359,7 +359,7 @@ class BQTestCase(unittest.TestCase):
             table_postfix: A string to be added to the end of the table_name.
         """
         data = cls._load_csv_with_schema(schema_file, data_file) if data_file else []
-        table_path = cls.table_path(table_name + table_postfix)
+        table_path = cls.client.path(table_name + table_postfix)
         with open(schema_file) as f:
             schema_json = json.load(f)
         schema_list = [SchemaField(row['name'], row['type']) for row in schema_json]
