@@ -197,9 +197,8 @@ class BQTestCase(unittest.TestCase):
             data.append(output_row)
         assert len(data) == len(row_data), \
             'Generated data should have as many rows as input'
-        table_path = cls.table_path(table_name)
-        cls.client.populate_table(table_path, table_schema, data, max_wait_sec=120)
-        cls.resources.add_or_update_bigquery_table(table_name, table_path)
+        table_path = cls.client.path(table_name)
+        cls.client.populate_table(table_path, table_schema, data, make_immediately_available=True)
 
     def _comment_helper(self, comments_list, idx):
         """Return the comment from the element in the list or '' if comment_list is empty"""
@@ -351,7 +350,7 @@ class BQTestCase(unittest.TestCase):
         This method creates a table to be used in testing
 
         Args:
-            table_name: A string with the name of the table name to be added to resources
+            table_name: A string with the name of the table
             schema_file: A string with the name of the schema file from which to build the test
                 table
             data_file: A string describing the file with the data to use in testing. If None,
@@ -363,8 +362,7 @@ class BQTestCase(unittest.TestCase):
         with open(schema_file) as f:
             schema_json = json.load(f)
         schema_list = [SchemaField(row['name'], row['type']) for row in schema_json]
-        cls.client.populate_table(table_path, schema_list, data, max_wait_sec=60)
-        cls.resources.add_or_update_bigquery_table(table_name, table_path)
+        cls.client.populate_table(table_path, schema_list, data)
 
     @staticmethod
     def _get_fields_from_schema(schema_file):

@@ -305,3 +305,13 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
         self.client.delete_dataset_by_name(temp_default_test_dataset_id, True)
         self.assertTrue(temp_default_test_dataset_id not in self.client.get_datasets())
+
+    def test_populate_sparse_table(self):
+        # type: () -> None
+        """Test bq_test_case.populate_sparse_table"""
+        table_name = self.client.path('test_table')
+        table_schema = FOO_BAR_BAZ_INTEGERS_SCHEMA
+        col_subset = ['foo', 'baz']
+        row_data = [[1, 2], [3, 4], [5, 6]]
+        self.populate_sparse_table(table_name, table_schema, col_subset, row_data)
+        self.expect_table_contains(table_name, [(1, None, 2), (3, None, 4), (5, None, 6)])
