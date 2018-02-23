@@ -16,11 +16,6 @@
 
 set -o nounset
 set -o errexit
-
-# Check that required variables are explicitly set.
-GOOGLE_APPLICATION_CREDENTIALS="$GOOGLE_APPLICATION_CREDENTIALS"
-TEST_PROJECT="$TEST_PROJECT"
-
 set -o xtrace
 
 virtualenv --system-site-packages virtualTestEnv
@@ -36,5 +31,11 @@ pip install .
 # Check the version of sqlite3 installed.
 python -c "import sqlite3; print(sqlite3.sqlite_version)"
 
-python -m verily.bigquery_wrapper.bq_test
+if [[ -v GOOGLE_APPLICATION_CREDENTIALS ]] && [[ -v TEST_PROJECT ]];
+then python -m verily.bigquery_wrapper.bq_test
+else echo "Skipping Bigquery tests. To run, set GOOGLE_APPLICATION_CREDENTIALS and TEST_PROJECT"
+fi
+
 python -m verily.bigquery_wrapper.mock_bq_test
+python -m verily.query_kit.template_test
+python -m verily.query_kit.features_test
