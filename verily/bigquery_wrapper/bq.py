@@ -169,14 +169,13 @@ class Client(BigqueryBaseClient):
             RuntimeError if replace_existing_tables is False and any of the tables requested for
                 creation already exist
         """
-
-        dataset_ref = DatasetReference(self.project_id,
-                                       dataset_id if dataset_id else self.default_dataset_id)
+        dataset_id = dataset_id or self.default_dataset_id
+        dataset_ref = DatasetReference(self.project_id, dataset_id)
 
         # If the flag isn't set to replace existing tables, raise an error if any tables we're
         # trying to create already exist.
         if not replace_existing_tables:
-            self._raise_if_tables_exist(table_names_to_schemas.keys())
+            self._raise_if_tables_exist(table_names_to_schemas.keys(), dataset_id)
 
         for name, schema in table_names_to_schemas.iteritems():
             table_ref = TableReference(dataset_ref, name)
