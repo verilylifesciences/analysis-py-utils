@@ -680,8 +680,6 @@ class Client(BigqueryBaseClient):
         _, dataset, table_name = self.parse_table_path(table_path,
                                                        delimiter=BQ_PATH_DELIMITER)
 
-        table_path = self._convert_to_mock_path(table_path)
-
         tables_in_dataset = self.table_map[dataset]
 
         schema_field_list = [x.name + ' ' + self._bq_type_to_sqlite_type(x.field_type)
@@ -693,6 +691,8 @@ class Client(BigqueryBaseClient):
                 self.delete_table_by_name(table_path)
             else:
                 raise RuntimeError('The table {} already exists.'.format(table_path))
+
+        table_path = self._convert_to_mock_path(table_path)
 
         self._create_table(table_path, schema_string=schema)
         self._insert_list_into_table(table_path, data)
