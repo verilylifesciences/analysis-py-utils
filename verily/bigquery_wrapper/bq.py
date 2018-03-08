@@ -224,7 +224,7 @@ class Client(BigqueryBaseClient):
 
         dataset_ref = DatasetReference(self.project_id, str(name))
 
-        tables_in_dataset = self.gclient.list_tables(dataset_ref)
+        tables_in_dataset = self.gclient.list_tables(dataset_ref, retry=self.default_retry)
         if delete_all_tables:
             for table_list_item in tables_in_dataset:
                 self.delete_table(table_list_item.reference)
@@ -273,7 +273,8 @@ class Client(BigqueryBaseClient):
         """
 
         dataset_ref = DatasetReference(project_id if project_id else self.project_id, dataset_id)
-        table = self.gclient.get_table(TableReference(dataset_ref, table_name))
+        table = self.gclient.get_table(TableReference(dataset_ref, table_name),
+                                       retry=self.default_retry)
 
         return table.schema
 
@@ -430,7 +431,8 @@ class Client(BigqueryBaseClient):
                 or if there are errors inserting the rows.
         """
 
-        table = self.gclient.get_table(self.get_table_reference_from_path(table_path))
+        table = self.gclient.get_table(self.get_table_reference_from_path(table_path),
+                                       retry=self.default_retry)
 
         if not self.table_exists(table):
             raise RuntimeError("The table " + table_path + " doesn't exist.")
