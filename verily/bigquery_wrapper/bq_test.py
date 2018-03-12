@@ -92,10 +92,10 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                                'dummy_file', out_fmt, compression)
 
     # TODO (Issue 8): Add test to export tables from a project different from self.client.project_id
-    @data(('csv', True, '', '', 'tmp.csv.gz', 'csv w/ gzip'),
-          ('json', True, 'test', '', 'test/tmp.json.gz', 'json w/ gzip'),
-          ('avro', False, '/test', '', 'test/tmp.avro', 'Avro w/o gzip'),
-          ('csv', True, '', 'ext', 'tmp_ext.csv.gz', 'csv w/ gzip & ext'))
+    @data(('csv', True, '', '', 'tmp.csv.gz/000000000000', 'csv w/ gzip'),
+          ('json', True, 'test', '', 'test/tmp.json.gz/000000000000', 'json w/ gzip'),
+          ('avro', False, '/test', '', 'test/tmp.avro/000000000000', 'Avro w/o gzip'),
+          ('csv', True, '', 'ext', 'tmp_ext.csv.gz/000000000000', 'csv w/ gzip & ext'))
     @unpack
     def test_export_table(self,
                           out_fmt,  # type: str
