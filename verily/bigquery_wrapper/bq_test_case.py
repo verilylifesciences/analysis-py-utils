@@ -82,7 +82,7 @@ class BQTestCase(unittest.TestCase):
         cls.use_mocks = False if force_use_real_bq else use_mocks
         cls.default_test_dataset_id = (datetime.datetime.utcnow().strftime("test_%Y_%m_%d_%H_%M_") +
                                        str(random.SystemRandom().randint(1000, 9999)))
-        if use_mocks:
+        if cls.use_mocks:
             cls.TEST_PROJECT = 'mock_bq_project'
             cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
         else:
