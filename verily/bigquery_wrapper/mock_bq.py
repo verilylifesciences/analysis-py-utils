@@ -204,7 +204,8 @@ class Client(BigqueryBaseClient):
     def _escape_row(data_list):
         """ For returned results in the query, anything that's string-like needs to be enclosed
         in single quotes before it makes it into the insert query, and everything needs to be
-        a string so the list join will work right. Nones are converted to NULLs.
+        a string so the list join will work right. Nones are converted to NULLs, and single quotes
+        inside the field itself are converted to double quotes.
         """
         new_data_list = []
         for row in data_list:
@@ -213,7 +214,7 @@ class Client(BigqueryBaseClient):
                 if col is None:
                     col = 'NULL'
                 elif type(col) not in [int, float]:
-                    col = '\'' + str(col) + '\''
+                    col = '\'' + str(col.replace('\'', '"')) + '\''
                 row_list.append(str(col))
             new_data_list.append(row_list)
         return new_data_list

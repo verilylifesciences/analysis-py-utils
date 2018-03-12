@@ -48,6 +48,13 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                 [SchemaField('char1', 'STRING')],
                 [['123'], ['456']], )
 
+        cls.str_with_single_quotes_table_name = cls.client.path('strings2',
+                                                                delimiter=BQ_PATH_DELIMITER)
+        cls.client.populate_table(
+            cls.str_with_single_quotes_table_name,
+            [SchemaField('description', 'STRING')],
+            [['Description of something with \'single quotes\'']], )
+
     @classmethod
     def setUpClass(cls):
         # type: () -> None
@@ -110,42 +117,43 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                                  [(5,), (1,)],
                                  enforce_ordering=False)
 
-def test_query_needs_substr_fixed(self):
-    # type: () -> None
-    self.expect_query_result('SELECT SUBSTR(char1,0,2) FROM `{}`'.format(self.str_table_name),
-                             [('12',), ('45',)],
-                             enforce_ordering=False)
+    def test_query_needs_substr_fixed(self):
+        # type: () -> None
+        self.expect_query_result('SELECT SUBSTR(char1,0,2) FROM `{}`'.format(self.str_table_name),
+                                 [('12',), ('45',)],
+                                 enforce_ordering=False)
 
-def test_query_needs_farm_fingerprint_fixed(self):
-    # type: () -> None
-    self.expect_query_result('SELECT FARM_FINGERPRINT(CONCAT(CAST(1),CAST(2))) FROM `{}`'
-                             .format(self.src_table_name),
-                             [('0',),])
+    def test_query_needs_farm_fingerprint_fixed(self):
+        # type: () -> None
+        self.expect_query_result('SELECT FARM_FINGERPRINT(CONCAT(CAST(1),CAST(2)))', [(0,),])
 
-def test_query_needs_farm_fingerprint_fixed_complex(self):
-    # type: () -> None
-    self.expect_query_result('SELECT FARM_FINGERPRINT(CONCAT(CAST(1 AS STRING),"/",'
-                             'CAST(2 AS STRING))) FROM `{}`'
-                             .format(self.src_table_name),
-                             [('0',),])
+    def test_query_needs_farm_fingerprint_fixed_complex(self):
+        # type: () -> None
+        self.expect_query_result('SELECT FARM_FINGERPRINT(CONCAT(CAST(1 AS STRING),"/",'
+                                 'CAST(2 AS STRING)))', [(0,),])
 
-def test_query_needs_mod_fixed(self):
-    # type: () -> None
-    self.expect_query_result('SELECT MOD(foo,4) FROM `{}`'.format(self.src_table_name),
-                             [(0,), (1,)],
-                             enforce_ordering=False)
+    def test_query_needs_mod_fixed(self):
+        # type: () -> None
+        self.expect_query_result('SELECT MOD(foo,4) FROM `{}`'.format(self.src_table_name),
+                                 [(0,), (1,)],
+                                 enforce_ordering=False)
 
-def test_query_needs_wont_execute_in_sqlite_raises(self):
-    # type: () -> None
-    with self.assertRaises(RuntimeError):
-        self.client.get_query_results('bad query')
+    def test_query_needs_wont_execute_in_sqlite_raises(self):
+        # type: () -> None
+        with self.assertRaises(RuntimeError):
+            self.client.get_query_results('bad query')
 
+    def test_query_legacysql_raises(self):
+        # type: () -> None
+        with self.assertRaises(RuntimeError):
+            self.client.get_query_results(
+                    'SELECT * FROM `{}`'.format(self.src_table_name), use_legacy_sql=True)
 
-def test_query_legacysql_raises(self):
-    # type: () -> None
-    with self.assertRaises(RuntimeError):
-        self.client.get_query_results(
-                'SELECT * FROM `{}`'.format(self.src_table_name), use_legacy_sql=True)
+    def test_query_needs_single_quotes_replaced(self):
+        # type: () -> None
+        self.expect_query_result(
+            'SELECT description FROM `{}`'.format(self.str_with_single_quotes_table_name),
+            [('Description of something with "single quotes"',)])
 
 
 if __name__ == '__main__':
