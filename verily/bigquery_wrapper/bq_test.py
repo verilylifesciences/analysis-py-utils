@@ -16,7 +16,10 @@
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
+import cStringIO
+import csv
 import random
+import uuid
 
 from ddt import data, ddt, unpack
 from google.cloud import storage
@@ -92,10 +95,10 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                                'dummy_file', out_fmt, compression)
 
     # TODO (Issue 8): Add test to export tables from a project different from self.client.project_id
-    @data(('csv', True, '', '', 'tmp.csv.gz/000000000000', 'csv w/ gzip'),
-          ('json', True, 'test', '', 'test/tmp.json.gz/000000000000', 'json w/ gzip'),
-          ('avro', False, '/test', '', 'test/tmp.avro/000000000000', 'Avro w/o gzip'),
-          ('csv', True, '', 'ext', 'tmp_ext.csv.gz/000000000000', 'csv w/ gzip & ext'))
+    @data(('csv', True, '', '', 'tmp000000000000.csv.gz', 'csv w/ gzip'),
+          ('json', True, 'test', '', 'test/tmp000000000000.json.gz', 'json w/ gzip'),
+          ('avro', False, '/test', '', 'test/tmp000000000000.avro', 'Avro w/o gzip'),
+          ('csv', True, '', 'ext', 'tmp000000000000_ext.csv.gz', 'csv w/ gzip & ext'))
     @unpack
     def test_export_table(self,
                           out_fmt,  # type: str
@@ -122,6 +125,68 @@ class BQTest(bq_shared_tests.BQSharedTests):
         self.assertTrue(
                 isinstance(self.bucket.get_blob(expected_output_path), storage.Blob),
                 test_description)
+
+    @data(('csv', True, '', '', 'tmp000000000000.csv.gz', 'csv w/ gzip', True),
+          ('json', True, 'test', '', 'test/tmp000000000000.json.gz', 'json w/ gzip', False),
+          ('avro', False, 'test', '', 'test/tmp000000000000.avro', 'Avro w/o gzip', False),
+          ('csv', True, '', 'ext', 'tmp000000000000_ext.csv.gz', 'csv w/ gzip & ext', True))
+    @unpack
+    def test_import_table_from_bucket(self,
+                                      input_fmt,  # type: str
+                                      compression,  # type: bool
+                                      dir_in_bucket,  # type: str
+                                      output_ext,  # type: str
+                                      input_path,  # type: str
+                                      test_description,  # type: str
+                                      skip_leading_row,  # type: bool
+                                    ):
+        # type: (...) -> None
+        """Test ImportTableFromBucket
+        Note this test is dependent on export_table_to_bucket working correctly.
+
+        Args:
+            input_fmt: Input format. Must be one of {'csv', 'json', 'avro'}
+            compression: Whether to compress file using GZIP. Cannot be applied to avro
+            dir_in_bucket: The directory in the bucket to store the output files
+            output_ext: Extension of the output file name
+            expected_output_path: Expected output path
+            test_description: A description of the test
+            skip_leading_row: Whether to skip the leading row in the data file
+        """
+        self.client.export_table_to_bucket(self.src_table_name, self.temp_bucket_name,
+                                           dir_in_bucket, input_fmt, compression, output_ext)
+
+        input_path = 'gs://{}/{}'.format(self.temp_bucket_name, input_path)
+
+        dest_path = self.client.path(str(uuid.uuid4().hex))
+
+        self.client.import_table_from_bucket(dest_path,
+                                             input_path,
+                                             input_format=input_fmt,
+                                             schema=bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA,
+                                             skip_leading_row=skip_leading_row)
+
+        results = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_path))
+        self.assertItemsEqual([(1, 2, 3), (4, 5, 6)], results)
+
+    def test_import_table_from_file(self):
+        data = [(8, 9, 10), (11, 12, 13)]
+        output = cStringIO.StringIO()
+
+        csv_out = csv.writer(output)
+        for row in data:
+            csv_out.writerow(row)
+        output.seek(0)
+
+        dest_path = self.client.path(str(uuid.uuid4().hex))
+
+        self.client.import_table_from_file(dest_path,
+                                           output,
+                                           input_format='csv',
+                                           schema=bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA)
+
+        results = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_path))
+        self.assertItemsEqual(data, results)
 
     # TODO(Issue 7): Add test to export schemas from a project different from self.client.project_id
     @data(('', '', 'tmp-schema.json', 'Export schema to root'),

@@ -549,20 +549,16 @@ class Client(BigqueryBaseClient):
             max_wait_secs: Maximum time to wait. Export table to storage takes significantly longer
                 than query a table. If not set, it will use the class default.
         """
-        # A mapping table from supported formats to bigquery required formats.
-        bigquery_required_formats = {'csv': 'CSV', 'json': 'NEWLINE_DELIMITED_JSON', 'avro': 'AVRO'}
-
-        if output_format not in bigquery_required_formats:
-            raise ValueError('Invalid output format: {}. Must be among {}'.format(
-                output_format, bigquery_required_formats.keys()))
+        bq_output_format = self._convert_to_bq_format(output_format)
 
         if compression and output_format == 'avro':
             raise ValueError('{} cannot be combined with GZIP compression'.format(output_format))
 
         src_table_ref = self.get_table_reference_from_path(table_path)
 
-        # Generate the destination of the table content
-        output_filename = src_table_ref.table_id
+        # Generate the destination of the table content. End in a * so that multiple
+        # shards can be written out if needed.
+        output_filename = src_table_ref.table_id + '*'
         if output_ext:
             output_filename += '_' + output_ext
         output_filename += '.' + output_format
@@ -570,10 +566,10 @@ class Client(BigqueryBaseClient):
             output_filename += '.gz'
         path = os.path.join(dir_in_bucket, output_filename)
 
-        destination = 'gs://{}/{}/*'.format(bucket_name, path.lstrip().lstrip('/'))
+        destination = 'gs://{}/{}'.format(bucket_name, path.lstrip().lstrip('/'))
 
         config = ExtractJobConfig()
-        config.destination_format = bigquery_required_formats[output_format]
+        config.destination_format = bq_output_format
         config.compression = 'GZIP' if compression else 'NONE'
 
         extract_job = self.gclient.extract_table(src_table_ref, destination, job_config=config,
@@ -620,6 +616,133 @@ class Client(BigqueryBaseClient):
                                         storage.Client(self.project_id).bucket(bucket_name))
 
         schema_blob.upload_from_string(json.dumps(schema, indent=2, separators=(',', ':')))
+
+    @staticmethod
+    def _convert_to_bq_format(format):
+        """
+        Converts one of the internally expressed formats (csv, avro, or json) into the
+        corresponding BigQuery constant. See
+        https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs#configuration.load.sourceFormat
+        """
+        # A mapping table from supported formats to bigquery required formats.
+        bigquery_required_formats = {'csv': 'CSV', 'json': 'NEWLINE_DELIMITED_JSON', 'avro': 'AVRO'}
+        if format not in bigquery_required_formats:
+            raise ValueError('Invalid input format: {}. Must be among {}'.format(
+                format, bigquery_required_formats.keys()))
+        return bigquery_required_formats[format]
+
+    @staticmethod
+    def _make_load_job_config(source_format,  # type: str
+                              write_disposition,  # type: str
+                              schema=None,  # type: Optional[List[SchemaField]]
+                              skip_leading_row=False,  #type: bool
+                              ):
+        """
+        Makes and returns a LoadJobConfig according to the passed-in parameters.
+        Args:
+            source_format: Should be a recognized BigQuery source format. See
+                https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs#configuration.load.sourceFormat
+            write_disposition: Should be a recognized BigQuery write disposition. See
+                https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs#configuration.load.writeDisposition
+            schema: A list of SchemaFields. If unset, BigQuery will try to infer a schema.
+            skip_leading_row: If True, the first row of the file loaded in will be skipped.
+        """
+        job_config = LoadJobConfig()
+        job_config.source_format = source_format
+        job_config.write_disposition = write_disposition
+        if schema:
+            job_config.schema = schema
+        else:
+            job_config.autodetect = True
+        if skip_leading_row:
+            job_config.skip_leading_rows = 1
+        return job_config
+
+    def import_table_from_bucket(self,
+                                 table_path,  # type: str
+                                 source_uri,  # type: str
+                                 schema=None, # type: List[SchemaField]
+                                 input_format='csv',  # type: Optional[str]]
+                                 write_disposition='WRITE_APPEND',  # type: str
+                                 skip_leading_row=False, # type: bool
+                                 max_wait_secs=None  # type: Optional[int]
+                                ):
+        # type: (...) -> None
+        """
+        Imports data from a file in a bucket to a BigQuery table.
+
+        Args:
+            table_path:  The path to the table that the data should be loaded in. If the table
+                doesn't already exist, it will be created.
+            source_uri: The URI for the file in the bucket to load.
+            schema: The BigQuery schema for the data. If not provided, BigQuery will try to infer.
+            input_format: The format of the input file. Can be 'csv', 'avro', or 'json'.
+            write_disposition: The write disposition to use, see writeDisposition on this page:
+                https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs
+            skip_leading_row: If True, it will skip the first row of data in the
+                file (presumably a header)
+            max_wait_secs: The amount of time to wait for the table to import. This operation can
+                be slower than other operations in this class. If unset, it will use the
+                class default timeout.
+
+        Raises:
+            RuntimeError if there is a problem executing the load job.
+        """
+        input_format = self._convert_to_bq_format(input_format)
+
+        table_ref = self.get_table_reference_from_path(table_path)
+        job_config = self._make_load_job_config(input_format, write_disposition,
+                                                schema, skip_leading_row)
+        load_job = self.gclient.load_table_from_uri(source_uri, table_ref,
+                                            retry=self.default_retry,
+                                            job_config=job_config)
+        try:
+            load_job.result(max_wait_secs or self.max_wait_secs)
+        except:
+            raise RuntimeError(load_job.errors)
+
+    def import_table_from_file(self,
+                               table_path,  # type: str
+                               opened_source_file,  # type: File
+                               schema,  # type: List[SchemaField]
+                               input_format='csv',  # type: Optional[str]]
+                               write_disposition='WRITE_APPEND',
+                               skip_leading_row=False,  # type: bool
+                               max_wait_secs=None  # type: Optional[int]
+                              ):
+        # type: (...) -> None
+        """
+        Imports data from a local file to a BigQuery table.
+
+        Args:
+            table_path:  The path to the table that the data should be loaded in. If the table
+                doesn't already exist, it will be created.
+            opened_source_file: The source file, already opened in read-binary mode.
+            schema: The BigQuery schema for the data. If unset, BigQuery will try to infer.
+            input_format: The format of the input file. Can be 'csv', 'avro', or 'json'.
+            write_disposition: The write disposition to use, see writeDisposition on this page:
+                https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs
+            skip_leading_row: If True, it will skip the first row of data in the
+                file (presumably a header)
+            max_wait_secs: The amount of time to wait for the table to import. This operation can
+                be slower than other operations in this class. If unset, it will use the
+                class default timeout.
+
+        Raises:
+            RuntimeError if there is a problem executing the load job.
+        """
+        input_format = self._convert_to_bq_format(input_format)
+
+        # Load it into Bigquery
+        table_ref = self.get_table_reference_from_path(table_path)
+        job_config = self._make_load_job_config(input_format, write_disposition,
+                                                schema, skip_leading_row)
+        load_job = self.gclient.load_table_from_file(opened_source_file, table_ref,
+                                                     job_config=job_config)
+        try:
+            load_job.result(max_wait_secs or self.max_wait_secs)
+        except:
+            raise RuntimeError(load_job.errors)
 
     def dataset_exists(self,
                        dataset  # type: Dataset, DatasetReference

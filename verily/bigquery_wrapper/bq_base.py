@@ -308,6 +308,70 @@ class BigqueryBaseClient(object):
         """
         raise NotImplementedError("export_schema_to_bucket is not implemented.")
 
+    def import_table_from_bucket(self,
+                                 table_path,  # type: str
+                                 source_uri,  # type: str
+                                 schema=None, # type: List[SchemaField]
+                                 input_format='csv',  # type: Optional[str]]
+                                 write_disposition='WRITE_APPEND',  # type: str
+                                 skip_leading_row=False, # type: bool
+                                 max_wait_secs=None  # type: Optional[int]
+                                ):
+        # type: (...) -> None
+        """
+        Imports data from a file in a bucket to a BigQuery table.
+
+        Args:
+            table_path: The path to the table that the data should be loaded in. If the table
+                doesn't already exist, it will be created.
+            source_uri: The URI for the file in the bucket to load.
+            schema: The BigQuery schema for the data. If not provided, BigQuery will try to infer.
+            input_format: The format of the input file. Can be 'csv', 'avro', or 'json'.
+            write_disposition: The write disposition to use, see writeDisposition on this page:
+                https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs
+            skip_leading_row: If True, it will skip the first row of data in the
+                file (presumably a header)
+            max_wait_secs: The amount of time to  wait for the table to import. This operation can
+                be slower than other operations in this class. If unset, it will use the
+                class default timeout.
+
+        Raises:
+            RuntimeError if there is a problem executing the load job.
+        """
+        raise NotImplementedError('import_table_from_bucket is not implemented.')
+
+    def import_table_from_file(self,
+                               table_path,  # type: str
+                               opened_source_file,  # type: File
+                               schema,  # type: List[SchemaField]
+                               input_format='csv',  # type: Optional[str]]
+                               write_disposition='WRITE_APPEND',
+                               skip_leading_row=False,  # type: bool
+                               max_wait_secs=None  # type: Optional[int]
+                              ):
+        # type: (...) -> None
+        """
+        Imports data from a local file to a BigQuery table.
+
+        Args:
+            table_path: The path to the table that the data should be loaded in. If the table
+                doesn't already exist, it will be created.
+            opened_source_file: The source file, already opened in read-binary mode.
+            schema: The BigQuery schema for the data. If unset, BigQuery will try to infer.
+            input_format: The format of the input file. Can be 'csv', 'avro', or 'json'.
+            write_disposition: The write disposition to use, see writeDisposition on this page:
+                https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs
+            skip_leading_row: If True, it will skip the first row of data in the
+                file (presumably a header)
+            max_wait_secs: The amount of time to  wait for the table to import. This operation can
+                be slower than other operations in this class. If unset, it will use the
+                class default timeout.
+
+        Raises:
+            RuntimeError if there is a problem executing the load job.
+        """
+        raise NotImplementedError("import_table_from_file is not implemented.")
+
     def parse_table_path(self,
                          table_path,  # type: str
                          delimiter=None,  # type: Optional[str]
