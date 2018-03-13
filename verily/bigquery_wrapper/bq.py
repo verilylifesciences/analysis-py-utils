@@ -534,8 +534,9 @@ class Client(BigqueryBaseClient):
                                ):
         # type: (...) -> None
         """
-        Export a BigQuery table to a file in the given bucket. The output file has the same name
-        as the table.
+        Export a BigQuery table to a file (or a set of files)
+        in the given bucket. The output files will be in a directory with the same name
+        as the table, within the bucket_name and dir_in_bucket provided.
 
         Args:
             table_path: Path of the table
@@ -569,7 +570,7 @@ class Client(BigqueryBaseClient):
             output_filename += '.gz'
         path = os.path.join(dir_in_bucket, output_filename)
 
-        destination = 'gs://{}/{}'.format(bucket_name, path.lstrip().lstrip('/'))
+        destination = 'gs://{}/{}/*'.format(bucket_name, path.lstrip().lstrip('/'))
 
         config = ExtractJobConfig()
         config.destination_format = bigquery_required_formats[output_format]
