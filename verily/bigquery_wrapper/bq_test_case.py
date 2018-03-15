@@ -21,7 +21,6 @@ temporary tables by calling bq.PopulateTable().
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
-import copy
 import datetime
 import json
 import logging
@@ -37,10 +36,6 @@ from google.cloud.bigquery.schema import SchemaField
 from typing import Optional
 
 from verily.bigquery_wrapper import bq as real_bq
-try:
-  from verily.bigquery_wrapper import mock_bq
-except ImportError as e:
-    print("***NOTE: Only BigQuery tests will work in this environment:\n\t" + str(e))
 
 from verily.bigquery_wrapper.pandas_utils import safe_read_csv
 
@@ -59,8 +54,8 @@ SELECT_ALL_FORMAT = 'SELECT * FROM `{}`'
 class BQTestCase(unittest.TestCase):
     """Provides a client and a temporary dataset for testing SQL queries.
     By default, it will use an acutal BigQuery client. If you pass in
-    use_mocks=True to the setup method, then it will use a mock environment
-    backed by SQLite.
+    use_mocks=True to the setup method, then it will use a mock environment backed by an in-memory
+    database.
     """
 
     # If the FORCE_USE_REAL_BQ_FOR_TESTS environment variable is set to anything but empty then it
@@ -72,8 +67,14 @@ class BQTestCase(unittest.TestCase):
     tables_created_in_constructor = []
 
     @classmethod
-    def setUpClass(cls, use_mocks=False):
+    def setUpClass(cls, use_mocks=False, mock_type=None):
+        """Sets up BQ client and creates dataset and tables for testing.
 
+        Args:
+            use_mocks: Whether to use a mock implementation of the client.
+            mock_type: 'spark' for the Spark SQL mock implementation, 'sqlite' for the SQLite
+                implementation.
+        """
         force_use_real_bq = bool(cls.FORCE_USE_REAL_BQ)
         if force_use_real_bq:
             log = logging.getLogger("BQTestCase")
@@ -84,7 +85,16 @@ class BQTestCase(unittest.TestCase):
                                        str(random.SystemRandom().randint(1000, 9999)))
         if cls.use_mocks:
             cls.TEST_PROJECT = 'mock_bq_project'
-            cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
+            if not mock_type:
+                mock_type = 'spark'
+            if mock_type == 'spark':
+                from verily.bigquery_wrapper import mock_bq
+                cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
+            elif mock_type == 'sqlite':
+                from verily.bigquery_wrapper import mock_bq_sqlite
+                cls.client = mock_bq_sqlite.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
+            else:
+                raise ValueError('mock_type must be "spark" or "sqlite".')
         else:
             if cls.TEST_PROJECT is None:
               raise ValueError("Environment variable 'TEST_PROJECT' is not set. "
@@ -92,7 +102,8 @@ class BQTestCase(unittest.TestCase):
                                "wish to run test queries.")
             cls.client = real_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
         # Make the tables in the test datasets expire after an hour.
-        cls.client.create_dataset_by_name(cls.default_test_dataset_id, expiration_hours=EXPIRATION_HOURS)
+        cls.client.create_dataset_by_name(cls.default_test_dataset_id,
+                                          expiration_hours=EXPIRATION_HOURS)
         cls.create_mock_tables()
 
         # Get the tables present in the class before anything else runs.

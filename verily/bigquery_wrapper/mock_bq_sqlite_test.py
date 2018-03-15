@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the Spark SQL mock implementation of the bq library."""
+"""Unit tests to be run by both the SQLite and Spark SQL mock implementations."""
 
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
@@ -26,13 +26,13 @@ from verily.bigquery_wrapper.bq_base import BQ_PATH_DELIMITER
 
 
 @ddt
-class MockBQTest(bq_shared_tests.BQSharedTests):
+class MockBQSqliteTest(bq_shared_tests.BQSharedTests):
     @classmethod
     def create_mock_tables(cls):
         # type: () -> None
         """Create mock tables"""
 
-        super(MockBQTest, cls).create_mock_tables()
+        super(MockBQSqliteTest, cls).create_mock_tables()
 
         cls.dates_table_name = cls.client.path('dates', delimiter=BQ_PATH_DELIMITER)
         cls.client.populate_table(
@@ -59,13 +59,13 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
     def setUpClass(cls):
         # type: () -> None
         """Set up class"""
-        super(MockBQTest, cls).setUpClass(use_mocks=True, mock_type='spark')
+        super(MockBQSqliteTest, cls).setUpClass(use_mocks=True, mock_type='sqlite')
 
     @classmethod
     def tearDownClass(cls):
         # type: () -> None
         """Tear down class"""
-        super(MockBQTest, cls).tearDownClass()
+        super(MockBQSqliteTest, cls).tearDownClass()
 
     def test_query_needs_legacy_sql_prefix_removed(self):
         # type: () -> None
@@ -94,10 +94,14 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
 
     def test_query_needs_format_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
-                                 'FROM `{}`'.format(self.src_table_name),
-                                 [('1 and 2', 3), ('4 and 5', 6)],
-                                 enforce_ordering=False)
+        # Some environments have an older version of sqlite3 installed which is fine
+        # for all tests except this one.
+        import sqlite3
+        if sqlite3.sqlite_version != '3.8.2':
+            self.expect_query_result('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
+                                                   + 'FROM `{}`'.format(self.src_table_name),
+                                     [('1 and 2', 3), ('4 and 5', 6)],
+                                     enforce_ordering=False)
 
     def test_query_needs_extract_year_fixed(self):
         # type: () -> None
@@ -149,7 +153,7 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
         # type: () -> None
         self.expect_query_result(
             'SELECT * FROM `{}`'.format(self.str_with_single_quotes_table_name),
-            [('Description of something with \'single quotes\'', True)])
+            [('Description of something with "single quotes"', True)])
 
 
 if __name__ == '__main__':

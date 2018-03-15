@@ -36,5 +36,20 @@ pip install .
 # Check the version of sqlite3 installed.
 python -c "import sqlite3; print(sqlite3.sqlite_version)"
 
+# Install pyspark
+CUR_DIR=$(pwd)
+cd /opt
+curl http://archive.apache.org/dist/spark/spark-2.2.0/spark-2.2.0-bin-hadoop2.7.tgz | tar zxf -
+# According to pip, the pyspark version list is (2.1.2, 2.2.0.post0, 2.2.1, 2.3.0). No idea why the
+# post0 at the end of 2.2.0, but it appears to be the right version.
+pip install pyspark==2.2.0.post0
+export SPARK_HOME=/opt/spark-2.2.0-bin-hadoop2.7
+export PYSPARK_PYTHON=/usr/bin/python
+cd $CUR_DIR
+
+# Check the version of pyspark installed
+spark-submit --version
+
 python -m verily.bigquery_wrapper.bq_test
 python -m verily.bigquery_wrapper.mock_bq_test
+python -m verily.bigquery_wrapper.mock_bq_sqlite_test

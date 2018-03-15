@@ -83,8 +83,9 @@ class BigqueryBaseClient(object):
           query: The query to run.
           table_path: The path to the table (in the client's project) to write
               the results to.
-          write_disposition: One of 'WRITE_TRUNCATE', 'WRITE_APPEND',
-              'WRITE_EMPTY'. Default is WRITE_EMPTY.
+          write_disposition: Specifies behavior if table already exists. See options here:
+              https://cloud.google.com/bigquery/docs/reference/rest/v2/jobs under
+              configuration.query.writeDisposition
           use_legacy_sql: Whether the query is written in standard or legacy sql.
           max_wait_secs: Seconds to wait for the query before timing out. If not
                 set, the class default will be used.

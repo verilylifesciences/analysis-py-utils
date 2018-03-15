@@ -21,10 +21,10 @@ FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
 @ddt
 class BQSharedTests(bq_test_case.BQTestCase):
     @classmethod
-    def setUpClass(cls, use_mocks=False):
+    def setUpClass(cls, use_mocks=False, mock_type=None):
         # type: () -> None
         """Set up class"""
-        super(BQSharedTests, cls).setUpClass(use_mocks=use_mocks)
+        super(BQSharedTests, cls).setUpClass(use_mocks=use_mocks, mock_type=mock_type)
         cls.longMessage = True
 
     @classmethod
@@ -57,14 +57,49 @@ class BQSharedTests(bq_test_case.BQTestCase):
         """
         self.expect_table_contains(self.long_table_name, [(1, )] * expected_length)
 
-    def test_create_table_from_query(self):
+    def test_create_table_from_query_write_append(self):
         # type: () -> None
-        dest_table = self.client.path('tmp2', delimiter=BQ_PATH_DELIMITER)
+        dest_table = self.client.path('tmp_write_append', delimiter=BQ_PATH_DELIMITER)
         self.client.create_table_from_query(bq_test_case.SELECT_ALL_FORMAT
                                             .format(self.src_table_name),
-                                            dest_table)
+                                            dest_table, write_disposition='WRITE_APPEND')
 
         self.expect_table_contains(dest_table, [(1, 2, 3), (4, 5, 6)])
+
+        self.client.create_table_from_query('SELECT 7 AS foo, 8 AS bar, 9 AS baz',
+                                            dest_table, write_disposition='WRITE_APPEND')
+
+        self.expect_table_contains(dest_table, [(1, 2, 3), (4, 5, 6), (7, 8, 9)])
+
+        self.client.delete_table_by_name(dest_table)
+
+    def test_create_table_from_query_write_truncate(self):
+        # type: () -> None
+        dest_table = self.client.path('tmp_write_truncate', delimiter=BQ_PATH_DELIMITER)
+        self.client.create_table_from_query(bq_test_case.SELECT_ALL_FORMAT
+                                            .format(self.src_table_name),
+                                            dest_table, write_disposition='WRITE_TRUNCATE')
+
+        self.expect_table_contains(dest_table, [(1, 2, 3), (4, 5, 6)])
+
+        self.client.create_table_from_query('SELECT 7 AS foo, 8 AS bar, 9 AS baz',
+                                            dest_table, write_disposition='WRITE_TRUNCATE')
+
+        self.expect_table_contains(dest_table, [(7, 8, 9)])
+
+        self.client.delete_table_by_name(dest_table)
+
+    def test_create_table_from_query_write_empty_raises_if_exists(self):
+        # type: () -> None
+        dest_table = self.client.path('tmp_write_empty', delimiter=BQ_PATH_DELIMITER)
+        self.client.create_table_from_query(bq_test_case.SELECT_ALL_FORMAT
+                                            .format(self.src_table_name),
+                                            dest_table, write_disposition='WRITE_EMPTY')
+        self.expect_table_contains(dest_table, [(1, 2, 3), (4, 5, 6)])
+
+        with self.assertRaises(Exception):
+            self.client.create_table_from_query('SELECT 7 AS foo, 8 AS bar, 9 AS baz',
+                                                dest_table, write_disposition='WRITE_EMPTY')
 
         self.client.delete_table_by_name(dest_table)
 
@@ -206,7 +241,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
                                    [[1, 2, 3], [4, 5, 6]],
                                    replace_existing_table=True)
 
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(Exception):
             self.client.append_rows(table_name,
                                     [[7, 8, 9]],
                                     [SchemaField('foo', 'INTEGER'),
@@ -293,6 +328,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
 
         with self.assertRaises(Exception):
             self.client.delete_dataset_by_name(self.default_test_dataset_id)
+        self.client.delete_table_by_name(dest_table)
 
     def test_force_delete_dataset_with_tables(self):
         # type: () -> None
@@ -316,3 +352,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         row_data = [[1, 2], [3, 4], [5, 6]]
         self.populate_sparse_table(table_name, table_schema, col_subset, row_data)
         self.expect_table_contains(table_name, [(1, None, 2), (3, None, 4), (5, None, 6)])
+
+
+def main():
+    bq_test_case.main()
