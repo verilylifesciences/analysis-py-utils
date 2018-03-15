@@ -95,10 +95,10 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                                'dummy_file', out_fmt, compression)
 
     # TODO (Issue 8): Add test to export tables from a project different from self.client.project_id
-    @data(('csv', True, '', '', 'tmp000000000000.csv.gz', 'csv w/ gzip'),
-          ('json', True, 'test', '', 'test/tmp000000000000.json.gz', 'json w/ gzip'),
-          ('avro', False, '/test', '', 'test/tmp000000000000.avro', 'Avro w/o gzip'),
-          ('csv', True, '', 'ext', 'tmp000000000000_ext.csv.gz', 'csv w/ gzip & ext'))
+    @data(('csv', True, '', '', 'tmp000000000000.csv.gz', True, 'csv w/ gzip'),
+          ('json', True, 'test', '', 'test/tmp000000000000.json.gz', True, 'json w/ gzip'),
+          ('avro', False, '/test', '', 'test/tmp.avro', False, 'Avro w/o gzip'),
+          ('csv', True, '', 'ext', 'tmp_ext.csv.gz', False, 'csv w/ gzip & ext'))
     @unpack
     def test_export_table(self,
                           out_fmt,  # type: str
@@ -106,6 +106,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
                           dir_in_bucket,  # type: str
                           output_ext,  # type: str
                           expected_output_path,  # type: str
+                          support_multifile_export,  # type: bool
                           test_description  # type: str
                           ):
         # type: (...) -> None
@@ -120,11 +121,14 @@ class BQTest(bq_shared_tests.BQSharedTests):
         """
 
         self.client.export_table_to_bucket(self.src_table_name, self.temp_bucket_name,
-                                           dir_in_bucket, out_fmt, compression, output_ext)
+                                           dir_in_bucket, out_fmt, compression, output_ext,
+                                           support_multifile_export=support_multifile_export)
 
         self.assertTrue(
                 isinstance(self.bucket.get_blob(expected_output_path), storage.Blob),
-                test_description)
+                           test_description +
+                           ': File {} is not in {}'.format(expected_output_path,
+                                                           str([x for x in self.bucket.list_blobs()])))
 
     @data(('csv', True, '', '', 'tmp000000000000.csv.gz', 'csv w/ gzip', True),
           ('json', True, 'test', '', 'test/tmp000000000000.json.gz', 'json w/ gzip', False),
