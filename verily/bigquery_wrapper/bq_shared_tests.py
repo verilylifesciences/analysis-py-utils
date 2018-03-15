@@ -25,6 +25,7 @@ class BQSharedTests(bq_test_case.BQTestCase):
         # type: () -> None
         """Set up class"""
         super(BQSharedTests, cls).setUpClass(use_mocks=use_mocks)
+        cls.longMessage = True
 
     @classmethod
     def create_mock_tables(cls):

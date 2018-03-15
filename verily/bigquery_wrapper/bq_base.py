@@ -267,7 +267,8 @@ class BigqueryBaseClient(object):
                                output_format='csv',  # type: Optional[str]]
                                compression=False,  # type: Optional[bool]
                                output_ext='',  # type: Optional[str]
-                               max_wait_secs=None  # type: Optional[int]
+                               max_wait_secs=None,  # type: Optional[int]
+                               support_multifile_export=True  #type: bool
                                ):
         # type: (...) -> None
         """
@@ -284,6 +285,11 @@ class BigqueryBaseClient(object):
                 different exports
             max_wait_secs: Maximum time to wait. Export table to storage takes significantly longer
                 than query a table. If not set, it will use the class default.
+            support_multifile_export: If True, and the table is large enough, then the table will be
+                exported as several files suffixed with a shard number. If False, it will be exported
+                as a single file.
+        Raises:
+            RuntimeError if there is a problem with the export job.
         """
         raise NotImplementedError("export_table_to_bucket is not implemented.")
 
