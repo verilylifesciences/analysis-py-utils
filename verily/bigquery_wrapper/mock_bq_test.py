@@ -52,8 +52,8 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                                                                 delimiter=BQ_PATH_DELIMITER)
         cls.client.populate_table(
             cls.str_with_single_quotes_table_name,
-            [SchemaField('description', 'STRING')],
-            [['Description of something with \'single quotes\'']], )
+            [SchemaField('description', 'STRING'), SchemaField('is_good', 'BOOLEAN')],
+            [['Description of something with \'single quotes\'', True]], )
 
     @classmethod
     def setUpClass(cls):
@@ -152,8 +152,8 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
     def test_query_needs_single_quotes_replaced(self):
         # type: () -> None
         self.expect_query_result(
-            'SELECT description FROM `{}`'.format(self.str_with_single_quotes_table_name),
-            [('Description of something with "single quotes"',)])
+            'SELECT * FROM `{}`'.format(self.str_with_single_quotes_table_name),
+            [('Description of something with "single quotes"', True)])
 
 
 if __name__ == '__main__':

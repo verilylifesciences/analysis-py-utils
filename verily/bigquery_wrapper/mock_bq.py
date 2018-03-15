@@ -214,7 +214,7 @@ class Client(BigqueryBaseClient):
                 if col is None:
                     col = 'NULL'
                 elif type(col) not in [int, float]:
-                    col = '\'' + str(col.replace('\'', '"')) + '\''
+                    col = '\'' + str(col).replace('\'', '"') + '\''
                 row_list.append(str(col))
             new_data_list.append(row_list)
         return new_data_list
