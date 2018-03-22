@@ -110,8 +110,8 @@ class Client(BigqueryBaseClient):
         Returns:
             A TableReference for the table specified by the path
         """
-        _, dataset, table = self.parse_table_path(table_path)
-        dataset_ref = DatasetReference(self.project_id, dataset)
+        project, dataset, table = self.parse_table_path(table_path)
+        dataset_ref = DatasetReference(project, dataset)
         return TableReference(dataset_ref, table)
 
     def create_table_from_query(self,
