@@ -82,7 +82,11 @@ class Client(MockBaseClient):
                  print_before_and_after=False):
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier,
                                      print_before_and_after)
-        self.spark = SparkSession.builder.getOrCreate()
+        self.spark = (SparkSession.builder
+                      .master('local')
+                      .appName('mock_bq')
+                      .config('spark.executor.memory', '1g')
+                      .getOrCreate())
 
     def get_delimiter(self):
         return BQ_PATH_DELIMITER
@@ -175,20 +179,19 @@ class Client(MockBaseClient):
             raise RuntimeError('We tried to reformat your query into Spark SQL, ' +
                                'but it still won\'t work. Check to make sure it was a valid ' +
                                'query to begin with, then consider adding the transformation ' +
-                               'needed to make it work in the _reformat_query method.' +
-                               '\nSpark SQL error: ' + str(e) + '\nThe result query: ' +
-                               ' '.join(query.split()))
+                               'needed to make it work in the _reformat_query method. ' +
+                               'Spark SQL error: ' + '\n'.join(str(e).split(r'\n')))
         return query
 
     @staticmethod
     def _transform_extract(query):
         """Transform EXTRACT(X FROM Y) to just X(Y)."""
-        return re.sub(r'EXTRACT\((.+) FROM (.+)\)', r'\1(\2)', query)
+        return re.sub(r'EXTRACT\((.+?) FROM (.+?)\)', r'\1(\2)', query)
 
     @staticmethod
     def _transform_mod(query):
         """Transform MOD(arg1,arg2) to PMOD(arg1,arg2)."""
-        return re.sub('MOD\((.*),(.*)\)', r'PMOD(\1,\2)', query)
+        return re.sub('MOD\((.+?),(.+?)\)', r'PMOD(\1,\2)', query)
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[bool], Optional[int]) -> List[Tuple[Any]]

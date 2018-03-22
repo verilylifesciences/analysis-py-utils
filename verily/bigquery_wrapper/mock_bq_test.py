@@ -99,18 +99,11 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                                  [('1 and 2', 3), ('4 and 5', 6)],
                                  enforce_ordering=False)
 
-    def test_query_needs_extract_year_fixed(self):
+    def test_query_needs_extract_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT EXTRACT(YEAR FROM foo) FROM `{}`'
+        self.expect_query_result('SELECT EXTRACT(YEAR FROM foo), EXTRACT(MONTH FROM foo) FROM `{}`'
                                  .format(self.dates_table_name),
-                                 [(1987,), (1950,)],
-                                 enforce_ordering=False)
-
-    def test_query_needs_extract_month_fixed(self):
-        # type: () -> None
-        self.expect_query_result('SELECT EXTRACT(MONTH FROM foo) FROM `{}`'
-                                 .format(self.dates_table_name),
-                                 [(5,), (1,)],
+                                 [(1987, 5,), (1950, 1)],
                                  enforce_ordering=False)
 
     def test_query_needs_substr_fixed(self):
@@ -130,8 +123,9 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
 
     def test_query_needs_mod_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT MOD(foo,4) FROM `{}`'.format(self.src_table_name),
-                                 [(0,), (1,)],
+        self.expect_query_result('SELECT MOD(foo,4), MOD(bar, 3) FROM `{}`'
+                                 .format(self.src_table_name),
+                                 [(0, 2), (1, 2)],
                                  enforce_ordering=False)
 
     def test_query_wont_execute_raises(self):
