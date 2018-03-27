@@ -28,7 +28,7 @@ import re
 from google.cloud.bigquery.schema import SchemaField
 from pyspark.sql import SparkSession
 from pyspark.sql.types import *
-from pyspark.sql.utils import ParseException
+from pyspark.sql.utils import ParseException, AnalysisException
 from typing import Any, List, Optional, Tuple  # noqa: F401
 
 from verily.bigquery_wrapper.bq_base import BQ_PATH_DELIMITER, BigqueryBaseClient
@@ -181,6 +181,9 @@ class Client(MockBaseClient):
                                'query to begin with, then consider adding the transformation ' +
                                'needed to make it work in the _reformat_query method. ' +
                                'Spark SQL error: ' + '\n'.join(str(e).split(r'\n')))
+        except AnalysisException as e:
+            raise RuntimeError('Spark SQL couldn\'t analyze the query. Reformatted query: ' +
+                               query + '\nSpark SQL error: ' + '\n'.join(str(e).split(r'\n')))
         return query
 
     @staticmethod
