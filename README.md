@@ -177,6 +177,15 @@ that the query is sent to BigQuery instead of SQLite3.
 Whether you use the mock or not, it's a good idea to make sure your tests pass
 using actual BigQuery.
 
+#### Spark SQL Postmortem
+
+We have tried to re-implement mock bq in Spark SQL, which uses the HiveQL dialect which is very
+similar to BQ Standard SQL. However, when put into practice with complex queries, the Spark SQL
+implementation was randomly unable to recognize certain columns for no discernable reason. There
+didn't seem to be any pattern to which columns Spark SQL was unable to recognize. When those columns
+were removed from the query, the query succeeded. Since randomly dropping columns causes too much
+harm to the stability of the implementation, we decided to switch back to SQLite.
+
 ## Troubleshooting
 
 ### BigQuery

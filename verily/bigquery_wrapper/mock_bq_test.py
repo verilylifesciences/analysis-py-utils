@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Unit tests for the Spark SQL mock implementation of the bq library."""
+"""Unit tests for the bq library."""
 
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
@@ -59,7 +59,7 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
     def setUpClass(cls):
         # type: () -> None
         """Set up class"""
-        super(MockBQTest, cls).setUpClass(use_mocks=True, mock_type='spark')
+        super(MockBQTest, cls).setUpClass(use_mocks=True)
 
     @classmethod
     def tearDownClass(cls):
@@ -87,23 +87,34 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
 
     def test_query_needs_concat_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT CONCAT(foo, bar) , baz FROM `{}`'
+        self.expect_query_result('SELECT CONCAT(foo || bar) , baz FROM `{}`'
                                  .format(self.src_table_name),
                                  [('12', 3), ('45', 6)],
                                  enforce_ordering=False)
 
     def test_query_needs_format_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
-                                 'FROM `{}`'.format(self.src_table_name),
-                                 [('1 and 2', 3), ('4 and 5', 6)],
+        # Some environments have an older version of sqlite3 installed which is fine
+        # for all tests except this one.
+        import sqlite3
+        if sqlite3.sqlite_version != '3.8.2':
+            self.expect_query_result('SELECT FORMAT(\'%d and %d\', foo, bar) , baz '
+                                                   + 'FROM `{}`'.format(self.src_table_name),
+                                     [('1 and 2', 3), ('4 and 5', 6)],
+                                     enforce_ordering=False)
+
+    def test_query_needs_extract_year_fixed(self):
+        # type: () -> None
+        self.expect_query_result('SELECT EXTRACT(YEAR FROM foo) FROM `{}`'
+                                 .format(self.dates_table_name),
+                                 [(1987,), (1950,)],
                                  enforce_ordering=False)
 
-    def test_query_needs_extract_fixed(self):
+    def test_query_needs_extract_month_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT EXTRACT(YEAR FROM foo), EXTRACT(MONTH FROM foo) FROM `{}`'
+        self.expect_query_result('SELECT EXTRACT(MONTH FROM foo) FROM `{}`'
                                  .format(self.dates_table_name),
-                                 [(1987, 5,), (1950, 1)],
+                                 [(5,), (1,)],
                                  enforce_ordering=False)
 
     def test_query_needs_substr_fixed(self):
@@ -123,9 +134,8 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
 
     def test_query_needs_mod_fixed(self):
         # type: () -> None
-        self.expect_query_result('SELECT MOD(foo,4), MOD(bar, 3) FROM `{}`'
-                                 .format(self.src_table_name),
-                                 [(0, 2), (1, 2)],
+        self.expect_query_result('SELECT MOD(foo,4) FROM `{}`'.format(self.src_table_name),
+                                 [(0,), (1,)],
                                  enforce_ordering=False)
 
     def test_query_wont_execute_raises(self):
@@ -143,7 +153,7 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
         # type: () -> None
         self.expect_query_result(
             'SELECT * FROM `{}`'.format(self.str_with_single_quotes_table_name),
-            [('Description of something with \'single quotes\'', True)])
+            [('Description of something with "single quotes"', True)])
 
 
 if __name__ == '__main__':

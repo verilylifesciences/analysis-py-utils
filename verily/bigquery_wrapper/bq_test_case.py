@@ -36,6 +36,10 @@ from google.cloud.bigquery.schema import SchemaField
 from typing import Optional
 
 from verily.bigquery_wrapper import bq as real_bq
+try:
+    from verily.bigquery_wrapper import mock_bq
+except ImportError as e:
+    print("***NOTE: Only BigQuery tests will work in this environment:\n\t" + str(e))
 
 from verily.bigquery_wrapper.pandas_utils import safe_read_csv
 
@@ -67,13 +71,11 @@ class BQTestCase(unittest.TestCase):
     tables_created_in_constructor = []
 
     @classmethod
-    def setUpClass(cls, use_mocks=False, mock_type=None):
+    def setUpClass(cls, use_mocks=False):
         """Sets up BQ client and creates dataset and tables for testing.
 
         Args:
             use_mocks: Whether to use a mock implementation of the client.
-            mock_type: 'spark' for the Spark SQL mock implementation, 'sqlite' for the SQLite
-                implementation.
         """
         force_use_real_bq = bool(cls.FORCE_USE_REAL_BQ)
         if force_use_real_bq:
@@ -85,16 +87,7 @@ class BQTestCase(unittest.TestCase):
                                        str(random.SystemRandom().randint(1000, 9999)))
         if cls.use_mocks:
             cls.TEST_PROJECT = 'mock_bq_project'
-            if not mock_type:
-                mock_type = 'spark'
-            if mock_type == 'spark':
-                from verily.bigquery_wrapper import mock_bq
-                cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
-            elif mock_type == 'sqlite':
-                from verily.bigquery_wrapper import mock_bq_sqlite
-                cls.client = mock_bq_sqlite.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
-            else:
-                raise ValueError('mock_type must be "spark" or "sqlite".')
+            cls.client = mock_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
         else:
             if cls.TEST_PROJECT is None:
               raise ValueError("Environment variable 'TEST_PROJECT' is not set. "
