@@ -703,12 +703,9 @@ class Client(BigqueryBaseClient):
         job_config = self._make_load_job_config(input_format, write_disposition,
                                                 schema, skip_leading_row)
         load_job = self.gclient.load_table_from_uri(source_uri, table_ref,
-                                            retry=self.default_retry,
-                                            job_config=job_config)
-        try:
-            load_job.result(max_wait_secs or self.max_wait_secs)
-        except:
-            raise RuntimeError(load_job.errors)
+                                                    retry=self.default_retry,
+                                                    job_config=job_config)
+        load_job.result(max_wait_secs or self.max_wait_secs)
 
     def import_table_from_file(self,
                                table_path,  # type: str
@@ -748,10 +745,7 @@ class Client(BigqueryBaseClient):
                                                 schema, skip_leading_row)
         load_job = self.gclient.load_table_from_file(opened_source_file, table_ref,
                                                      job_config=job_config)
-        try:
-            load_job.result(max_wait_secs or self.max_wait_secs)
-        except:
-            raise RuntimeError(load_job.errors)
+        load_job.result(max_wait_secs or self.max_wait_secs)
 
     def dataset_exists(self,
                        dataset  # type: Dataset, DatasetReference
