@@ -210,7 +210,7 @@ class Client(BigqueryBaseClient):
             logging.warning('Dataset {} already exists.'.format(name))
 
     def delete_dataset_by_name(self, name, delete_all_tables=False):
-        # type: (str, Optional[bool]) -> None
+        # type: (str, bool) -> None
         """Delete a dataset within the current project.
 
         Args:
@@ -222,14 +222,14 @@ class Client(BigqueryBaseClient):
             RuntimeError if there are still tables in the dataset and you try to delete it (with
                 delete_all_tables set to False)
         """
+        dataset_id = str(name)
+        dataset_ref = DatasetReference(self.project_id, dataset_id)
 
-        dataset_ref = DatasetReference(self.project_id, str(name))
-
-        tables_in_dataset = self.gclient.list_tables(dataset_ref, retry=self.default_retry)
+        tables_in_dataset = self.tables(dataset_id)
         if delete_all_tables:
-            for table_list_item in tables_in_dataset:
-                self.delete_table(table_list_item.reference)
-        elif tables_in_dataset.num_items > 0:
+            for table_id in tables_in_dataset:
+                self.delete_table_by_name(self.path(table_id, dataset_id=dataset_id))
+        elif len(tables_in_dataset) > 0:
             raise RuntimeError("Dataset {} still contains {} tables so you can't delete it."
                                .format(name, str(tables_in_dataset)))
 
