@@ -2,10 +2,9 @@
 
 ## Overview
 
-While SQL is well designed for describing non-iterative, rule-based computations,
-it is terrible for a number of things that have become essential for
-production software development. QueryKit is a library for defining SQL queries
-within a Python script that fixes some (though by no means all) of these issues.
+QueryKit enhances SQL by adding support for the composition of reusable query
+fragments. By writing complex SQL logic as smaller parameterized SQL fragments,
+these fragments can be more easily tested and reused.
 
 ## How It Works
 
@@ -36,7 +35,7 @@ names of subquery nodes are interpreted as input nodes and are added implicitly.
 For this graph, the input nodes are visits and revenue_table.
 
 ```python
-from google3.lifescience.clinical.tools.qtlib import template
+from verily.query_kit import template
 
 graph = template.QueryGraph('my_project', 'default_dataset')
 
