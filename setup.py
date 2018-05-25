@@ -17,11 +17,10 @@ from setuptools import find_packages
 from setuptools import setup
 
 REQUIRED_PACKAGES = ['pandas',
-                     'google-cloud==0.32.0',
-                     # TODO(Issue #4): When google-cloud stable release moves up to include
-                     # this version of google-cloud-bigquery, move the google-cloud version up
-                     # and delete this line.
-                     'google-cloud-bigquery==0.29.0',
+                     'google-api-core==1.1.2',
+                     'google-auth==1.4.1',
+                     'google-cloud-bigquery==1.1.0',
+                     'google-cloud-storage==1.10.0',
                      'pysqlite>=2.8.3',
                      'ddt',
                      'typing']
