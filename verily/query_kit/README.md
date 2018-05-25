@@ -39,14 +39,14 @@ from verily.query_kit import template
 
 graph = template.QueryGraph('my_project', 'default_dataset')
 
-graph.AddQuery('inpatients',
+graph.add_query('inpatients',
                'SELECT * \nFROM {visits} \nWHERE visit_type = "INPATIENT"')
 
-graph.AddQuery('inpatient_count',
+graph.add_query('inpatient_count',
                'SELECT facility, year, COUNT(*) AS in_count \n'
                'FROM {inpatients} \nGROUP BY facility, year')
 
-graph.AddQuery('inpatient_and_revenue',
+graph.add_query('inpatient_and_revenue',
                'SELECT * \nFROM {inpatient_count} \nJOIN {revenue_table}')
 ```
 
@@ -62,7 +62,7 @@ computation graph, simply specify an output node higher up the graph and/or
 input nodes lower down.
 
 ```python
-print graph.Compile('inpatient_and_revenue',
+print graph.compile('inpatient_and_revenue',
                     {'revenue_table': 'my_dataset.revenue_20160929',
                      'visits': 'my_dataset.visits_20160921'})
 ```
@@ -90,7 +90,7 @@ For example, the following two calls insert source tables into individual
 subqueries, creating final queries that can be used in unit tests.
 
 ```python
-print graph.Compile('inpatient_and_revenue',
+print graph.compile('inpatient_and_revenue',
                     {'revenue_table': 'my_dataset.revenue_20160929',
                      'inpatient_count': 'precomputed.count'})
 ```
@@ -102,7 +102,7 @@ JOIN `my_dataset.revenue_20160929`
 ```
 
 ```python
-print graph.Compile('inpatient_count',
+print graph.compile('inpatient_count',
                     {'inpatients': 'precomputed.inpatients'})
 ```
 
@@ -140,11 +140,11 @@ Sample Usage:
 
 ```python
 my_graph = template.QueryGraph('test-project', 'test-dataset')
-features.Aggregate(
+features.aggregate(
     my_graph, 'bool_aggregate', 'source',
     ['id', features.BoolCondition('feature1', 'my_condition')])
 query = my_graph.Compile('bool_aggregate', {'source': 'test-source'})
 ```
 
 The resulting query will GROUP BY id since this is the only non-reducer passed
-to Aggregate().
+to aggregate().
