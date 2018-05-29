@@ -29,7 +29,7 @@ import logging
 import os
 from collections import OrderedDict
 
-from typing import List  # noqa: F401
+from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
 from google.api_core import retry
 from google.cloud import bigquery, storage
@@ -75,7 +75,7 @@ class Client(BigqueryBaseClient):
         return BQ_PATH_DELIMITER
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
-        # type: (str, Optional[Bool], Optional[int]) -> List[Tuple[Any]]
+        # type: (str, Optional[bool], Optional[int]) -> List[Tuple[Any]]
         """Returns a list or rows, each of which is a tuple of values.
 
         Args:
@@ -225,15 +225,7 @@ class Client(BigqueryBaseClient):
         dataset_id = str(name)
         dataset_ref = DatasetReference(self.project_id, dataset_id)
 
-        tables_in_dataset = self.tables(dataset_id)
-        if delete_all_tables:
-            for table_id in tables_in_dataset:
-                self.delete_table_by_name(self.path(table_id, dataset_id=dataset_id))
-        elif len(tables_in_dataset) > 0:
-            raise RuntimeError("Dataset {} still contains {} tables so you can't delete it."
-                               .format(name, str(tables_in_dataset)))
-
-        self.delete_dataset(dataset_ref)
+        self.delete_dataset(dataset_ref, delete_all_tables)
 
     def delete_table_by_name(self, table_path):
         # type: (str) -> None
@@ -291,7 +283,7 @@ class Client(BigqueryBaseClient):
 
     @staticmethod
     def _convert_row_tuples_to_dicts(data, schema):
-        # type: (Tuple[str], List[SchemaField]) -> List[Dict[str, Any]]
+        # type: (List[Tuple[str]], List[SchemaField]) -> List[Dict[str, Any]]
         """
         Converts data (in combination with the passed-in schema) into JSON for inserting.
 
@@ -748,7 +740,7 @@ class Client(BigqueryBaseClient):
         load_job.result(max_wait_secs or self.max_wait_secs)
 
     def dataset_exists(self,
-                       dataset  # type: Dataset, DatasetReference
+                       dataset  # type: Union[Dataset, DatasetReference]
                        ):
         # type: (...) -> bool
         """Checks if a dataset exists.
@@ -766,7 +758,7 @@ class Client(BigqueryBaseClient):
             return False
 
     def table_exists(self,
-                     table  # type: TableReference, Table
+                     table  # type: Union[TableReference, Table]
                      ):
         # type: (...) -> bool
         """Checks if a table exists.
@@ -785,18 +777,21 @@ class Client(BigqueryBaseClient):
             return False
 
     def delete_dataset(self,
-                       dataset  # type: Dataset, DatasetReference
+                       dataset,  # type: Union[Dataset, DatasetReference]
+                       delete_contents=False  # type: bool
                        ):
         # type: (...) -> None
         """Deletes a dataset.
 
         Args:
             dataset: The Dataset or DatasetReference to delete.
+            delete_contents: If True, delete all tables in the dataset before deleting it.
         """
-        self.gclient.delete_dataset(dataset, retry=self.default_retry)
+        self.gclient.delete_dataset(dataset, retry=self.default_retry,
+                                    delete_contents=delete_contents)
 
     def delete_table(self,
-                     table  # type: Table, TableReference
+                     table  # type: Union[Table, TableReference]
                      ):
         # type: (...) -> None
         """Deletes a table.
@@ -807,7 +802,7 @@ class Client(BigqueryBaseClient):
         self.gclient.delete_table(table, retry=self.default_retry)
 
     def create_dataset(self,
-                       dataset  # type: DatasetReference, Dataset
+                       dataset  # type: Union[DatasetReference, Dataset]
                        ):
         # type: (...) -> None
         """
@@ -822,7 +817,7 @@ class Client(BigqueryBaseClient):
         self.gclient.create_dataset(dataset)
 
     def create_table(self,
-                     table  # type: Table, TableReference
+                     table  # type: Union[Table, TableReference]
                      ):
         # type: (Table) -> None
         """
@@ -839,7 +834,7 @@ class Client(BigqueryBaseClient):
         self.gclient.create_table(table)
 
     def fetch_data_from_table(self,
-                              table  # type: Table, TableReference
+                              table  # type: Union[Table, TableReference]
                               ):
         # type: (...) -> List[Tuple[Any]]
         """
