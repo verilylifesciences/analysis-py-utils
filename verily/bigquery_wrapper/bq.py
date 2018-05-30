@@ -43,7 +43,7 @@ from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient, BQ_P
 
 # This is the default timeout for any BigQuery operations executed in this file, if no timeout is
 # specified in the constructor.
-DEFAULT_TIMEOUT_SEC = 600
+DEFAULT_TIMEOUT_SEC = 1200
 
 # Bigquery has a limit of max 10000 rows to insert per request
 MAX_ROWS_TO_INSERT = 10000
