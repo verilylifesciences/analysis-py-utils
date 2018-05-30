@@ -214,6 +214,13 @@ class BQTest(bq_shared_tests.BQSharedTests):
                 isinstance(self.bucket.get_blob(expected_schema_path), storage.Blob),
                 test_description)
 
+    def test_invalid_query_prints_query(self):
+        """Test get_query_results prints the query if given an invalid query"""
+        query = 'this is an invalid query!'
+        with self.assertRaises(RuntimeError) as e:
+            self.client.get_query_results(query)
+        self.assertTrue(query in str(e.exception))
+
 
 if __name__ == '__main__':
     bq_test_case.main()

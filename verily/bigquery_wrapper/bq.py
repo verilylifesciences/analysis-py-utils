@@ -16,7 +16,7 @@
 Sample usage:
 
     client = bq.Client(project_id)
-    result = client.Query(query)
+    result = client.get_query_results(query)
 """
 
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
@@ -27,6 +27,7 @@ import csv
 import json
 import logging
 import os
+import time
 from collections import OrderedDict
 
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
@@ -37,8 +38,8 @@ from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
-from google.cloud.exceptions import (BadGateway, InternalServerError, NotFound, ServiceUnavailable,
-                                     TooManyRequests)
+from google.cloud.exceptions import (BadGateway, GoogleCloudError, InternalServerError, NotFound,
+                                     ServiceUnavailable,TooManyRequests)
 from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER
 
 # This is the default timeout for any BigQuery operations executed in this file, if no timeout is
@@ -74,6 +75,43 @@ class Client(BigqueryBaseClient):
         """ Returns the delimiter used to separate project, dataset, and table in a table path. """
         return BQ_PATH_DELIMITER
 
+    @classmethod
+    def _wait_for_job(self, query_job, query):
+        # type: (QueryJob, str, Optional[int]) -> Iterator[Row]
+        """Waits for a query job to finish and returns the result.
+
+        Surfaces any validation errors along with the offending query.
+
+        I have filed a feature request that printing the query be the default behavior.
+        https://github.com/GoogleCloudPlatform/google-cloud-python/issues/5408
+
+        Args:
+            query_job: The QueryJob to wait for.
+            query: The string query that the QueryJob is querying.
+
+        Returns:
+            The result of the query as an iterator of Row objects.
+        """
+        # Sleep for 1 second to make sure that the started job has had time to propagate validation
+        # errors.
+        time.sleep(1)
+        if query_job.done() and query_job.error_result:  # validation error
+            msg = str(query_job.errors)
+            # This craziness puts line numbers next to the SQL.
+            lines = query.split('\n')
+            longest = max(len(l) for l in lines)
+            # Print out a 'ruler' above and below the SQL so we can judge columns.
+            ruler = ' ' * 4 + '|'  # Left pad for the line numbers (4 digits plus ':')
+            for _ in range(longest / 10):
+                ruler += ' ' * 4 + '.' + ' ' * 4 + '|'
+            header = '-----Offending Sql Follows-----'
+            padding = ' ' * ((longest - len(header)) / 2)
+            msg += '\n\n{}{}\n\n{}\n{}\n{}'.format(padding, header, ruler, '\n'.join(
+                '{:4}:{}'.format(n + 1, line) for n, line in enumerate(lines)), ruler)
+            raise RuntimeError(msg)
+        # Block until the job is done and return the result.
+        return query_job.result()
+
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[bool], Optional[int]) -> List[Tuple[Any]]
         """Returns a list or rows, each of which is a tuple of values.
@@ -95,8 +133,7 @@ class Client(BigqueryBaseClient):
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
 
-        rows = query_job.result(retry=self.default_retry,
-                                timeout=max_wait_secs or self.max_wait_secs)
+        rows = self._wait_for_job(query_job, query)
         return [x.values() for x in list(rows)]
 
     def get_table_reference_from_path(self, table_path):
@@ -153,7 +190,7 @@ class Client(BigqueryBaseClient):
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
 
-        return query_job.result(timeout=max_wait_secs or self.max_wait_secs)
+        return self._wait_for_job(query_job, query)
 
     def create_tables_from_dict(self,
                                 table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
