@@ -138,6 +138,12 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                                  [(0,), (1,)],
                                  enforce_ordering=False)
 
+    def test_query_needs_if_fixed(self):
+        # type: () -> None
+        self.expect_query_result(
+            'SELECT IF(foo=4, "Four", "Not four") FROM `{}`'.format(self.src_table_name),
+            [("Not four",), ("Four",)], enforce_ordering=False)
+
     def test_query_wont_execute_raises(self):
         # type: () -> None
         with self.assertRaises(RuntimeError):

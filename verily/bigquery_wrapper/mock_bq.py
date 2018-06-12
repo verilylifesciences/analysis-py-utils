@@ -267,6 +267,7 @@ class Client(BigqueryBaseClient):
         query = self._transform_format(query)
         query = self._transform_substr(query)
         query = self._transform_mod(query)
+        query = self._transform_if(query)
 
         if self.print_before_and_after:
             logging.info("REFORMATTED: " + query)
@@ -379,6 +380,18 @@ class Client(BigqueryBaseClient):
         match = re.search(extract_regex, query)
         while match:
             repl_string = match.group('arg1') + ' % ' + match.group('arg2')
+            query = query[:match.start()] + repl_string + query[match.end():]
+            match = re.search(extract_regex, query)
+        return query
+
+    @staticmethod
+    def _transform_if(query):
+        """Transform IF(COND,arg1,arg2) to CASE WHEN COND THEN arg1 ELSE arg2 END."""
+        extract_regex = re.compile(r'IF\((?P<cond>.*),(?P<arg1>.*),(?P<arg2>.*)\)')
+        match = re.search(extract_regex, query)
+        while match:
+            repl_string = 'CASE WHEN {cond} THEN {arg1} ELSE {arg2} END'.format(
+                cond=match.group('cond'), arg1=match.group('arg1'), arg2=match.group('arg2'))
             query = query[:match.start()] + repl_string + query[match.end():]
             match = re.search(extract_regex, query)
         return query
