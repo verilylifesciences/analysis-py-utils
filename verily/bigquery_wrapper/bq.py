@@ -40,7 +40,8 @@ from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from google.cloud.exceptions import (BadGateway, GoogleCloudError, InternalServerError, NotFound,
                                      ServiceUnavailable,TooManyRequests)
-from verily.bigquery_wrapper.bq_base import MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER
+from verily.bigquery_wrapper.bq_base import (MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER,
+                                             validate_query_job)
 
 # This is the default timeout for any BigQuery operations executed in this file, if no timeout is
 # specified in the constructor.
@@ -95,20 +96,7 @@ class Client(BigqueryBaseClient):
         # Sleep for 1 second to make sure that the started job has had time to propagate validation
         # errors.
         time.sleep(1)
-        if query_job.done() and query_job.error_result:  # validation error
-            msg = str(query_job.errors)
-            # This craziness puts line numbers next to the SQL.
-            lines = query.split('\n')
-            longest = max(len(l) for l in lines)
-            # Print out a 'ruler' above and below the SQL so we can judge columns.
-            ruler = ' ' * 4 + '|'  # Left pad for the line numbers (4 digits plus ':')
-            for _ in range(longest / 10):
-                ruler += ' ' * 4 + '.' + ' ' * 4 + '|'
-            header = '-----Offending Sql Follows-----'
-            padding = ' ' * ((longest - len(header)) / 2)
-            msg += '\n\n{}{}\n\n{}\n{}\n{}'.format(padding, header, ruler, '\n'.join(
-                '{:4}:{}'.format(n + 1, line) for n, line in enumerate(lines)), ruler)
-            raise RuntimeError(msg)
+        validate_query_job(query_job, query)
         # Block until the job is done and return the result.
         return query_job.result()
 

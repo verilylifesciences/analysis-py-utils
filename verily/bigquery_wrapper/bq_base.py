@@ -595,3 +595,52 @@ class BigqueryBaseClient(object):
             raise RuntimeError('The tables {} that you requested to create already exist in '
                                'the dataset {}.',
                                ','.join(intersect), dataset_id or self.default_dataset_id)
+
+
+def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
+                query=""  # type: Optional[str]
+                ):
+    # type: (...) -> bool
+    """Returns True only if the query job passed in is finished.
+
+    Args:
+        job: A gcloud.QueryJob.
+        query: Optionally, the query this job is executing.
+    Returns:
+        True if the job is in state DONE, False otherwise.
+    Raises:
+        RuntimeError: If the job finished and returned an error result.
+    """
+    job.reload()
+    if job.state == 'DONE':
+        if query:
+            validate_query_job(job, query)
+        return True
+    return False
+
+
+def validate_query_job(query_job, query):
+    # type: (google.cloud.bigquery.job.QueryJob, str) -> None
+    """If the given query job has errors, raises a RuntimeError with the pretty-printed query and
+    the errors.
+
+    Args:
+        query_job: A gcloud.QueryJob.
+        query: The query this job is executing.
+    Raises:
+        RuntimeError: If the job finished and returned an error result.
+    """
+    if query_job.done() and query_job.error_result:  # validation error
+        msg = str(query_job.errors)
+        # This craziness puts line numbers next to the SQL.
+        lines = query.split('\n')
+        longest = max(len(l) for l in lines)
+        # Print out a 'ruler' above and below the SQL so we can judge columns.
+        ruler = ' ' * 4 + '|'  # Left pad for the line numbers (4 digits plus ':')
+        for _ in range(longest / 10):
+            ruler += ' ' * 4 + '.' + ' ' * 4 + '|'
+        header = '-----Offending Sql Follows-----'
+        padding = ' ' * ((longest - len(header)) / 2)
+        msg += '\n\n{}{}\n\n{}\n{}\n{}'.format(padding, header, ruler, '\n'.join(
+            '{:4}:{}'.format(n + 1, line) for n, line in enumerate(lines)), ruler)
+        raise RuntimeError(msg)
