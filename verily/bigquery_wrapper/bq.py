@@ -77,7 +77,7 @@ class Client(BigqueryBaseClient):
         return BQ_PATH_DELIMITER
 
     @classmethod
-    def _wait_for_job(self, query_job, query):
+    def _wait_for_job(self, query_job, query, max_wait_secs=None):
         # type: (QueryJob, str, Optional[int]) -> Iterator[Row]
         """Waits for a query job to finish and returns the result.
 
@@ -89,6 +89,7 @@ class Client(BigqueryBaseClient):
         Args:
             query_job: The QueryJob to wait for.
             query: The string query that the QueryJob is querying.
+            max_wait_secs: The maximum time to wait for the job to finish.
 
         Returns:
             The result of the query as an iterator of Row objects.
@@ -98,7 +99,7 @@ class Client(BigqueryBaseClient):
         time.sleep(1)
         validate_query_job(query_job, query)
         # Block until the job is done and return the result.
-        return query_job.result()
+        return query_job.result(timeout=max_wait_secs)
 
     def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[bool], Optional[int]) -> List[Tuple[Any]]
@@ -121,7 +122,7 @@ class Client(BigqueryBaseClient):
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
 
-        rows = self._wait_for_job(query_job, query)
+        rows = self._wait_for_job(query_job, query, max_wait_secs=max_wait_secs)
         return [x.values() for x in list(rows)]
 
     def get_table_reference_from_path(self, table_path):
@@ -178,7 +179,7 @@ class Client(BigqueryBaseClient):
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
 
-        return self._wait_for_job(query_job, query)
+        return self._wait_for_job(query_job, query, max_wait_secs=max_wait_secs)
 
     def create_tables_from_dict(self,
                                 table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
