@@ -77,7 +77,7 @@ class Client(BigqueryBaseClient):
         return BQ_PATH_DELIMITER
 
     @classmethod
-    def _wait_for_job(self, query_job, query, max_wait_secs=None):
+    def _wait_for_job(self, query_job, query, max_wait_secs=DEFAULT_TIMEOUT_SEC):
         # type: (QueryJob, str, Optional[int]) -> Iterator[Row]
         """Waits for a query job to finish and returns the result.
 
@@ -101,7 +101,7 @@ class Client(BigqueryBaseClient):
         # Block until the job is done and return the result.
         return query_job.result(timeout=max_wait_secs)
 
-    def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
+    def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=DEFAULT_TIMEOUT_SEC):
         # type: (str, Optional[bool], Optional[int]) -> List[Tuple[Any]]
         """Returns a list or rows, each of which is a tuple of values.
 
@@ -145,7 +145,7 @@ class Client(BigqueryBaseClient):
                                 table_path,  # type: str
                                 write_disposition='WRITE_EMPTY',  # type: Optional[str]
                                 use_legacy_sql=False,  # type: Optional[bool]
-                                max_wait_secs=None,  # type: Optional[int]
+                                max_wait_secs=DEFAULT_TIMEOUT_SEC,  # type: Optional[int]
                                 expected_schema=None  # type: Optional[List[SchemaField]]
                                 ):
         # type: (...) -> None
