@@ -27,7 +27,7 @@ REQUIRED_PACKAGES = ['pandas',
 
 setup(
     name='analysis-py-utils',
-    version='0.1',
+    version='0.4.0',
     license='Apache 2.0',
     author='Verily Life Sciences',
     url='https://github.com/verilylifesciences/analysis-py-utils',

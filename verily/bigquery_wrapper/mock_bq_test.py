@@ -117,6 +117,13 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                                  [(5,), (1,)],
                                  enforce_ordering=False)
 
+    def test_query_needs_extract_day_of_week_fixed(self):
+        # type () -> None
+        self.expect_query_result('SELECT EXTRACT(DAYOFWEEK FROM foo) FROM `{}`'
+                                 .format(self.dates_table_name),
+                                 [(3,), (0,)],
+                                 enforce_ordering=False)
+
     def test_query_needs_substr_fixed(self):
         # type: () -> None
         self.expect_query_result('SELECT SUBSTR(char1,0,2) FROM `{}`'.format(self.str_table_name),

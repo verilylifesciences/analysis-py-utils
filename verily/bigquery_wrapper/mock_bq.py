@@ -262,6 +262,7 @@ class Client(BigqueryBaseClient):
         query = self._transform_farmfingerprint(query)
         query = self._transform_extract_year(query)
         query = self._transform_extract_month(query)
+        query = self._transform_extract_day_of_week(query)
         query = self._transform_concat(query)
         query = self._transform_division(query)
         query = self._transform_format(query)
@@ -315,6 +316,19 @@ class Client(BigqueryBaseClient):
         match = re.search(extract_regex, query)
         while match:
             repl_string = 'CAST(substr(' + match.group('colname') + ', 6, 8) as INTEGER)'
+            query = query[:match.start()] + repl_string + query[match.end():]
+            match = re.search(extract_regex, query)
+        return query
+
+
+    @staticmethod
+    def _transform_extract_day_of_week(query):
+        """Transform EXTRACT(DAYOFWEEK to strftime function to get the day of the week
+         from a date or timestamp."""
+        extract_regex = re.compile(r'EXTRACT\(DAYOFWEEK FROM (?P<colname>.+?)\)')
+        match = re.search(extract_regex, query)
+        while match:
+            repl_string = "CAST(strftime('%w', " + match.group('colname') + ") as INTEGER)"
             query = query[:match.start()] + repl_string + query[match.end():]
             match = re.search(extract_regex, query)
         return query
