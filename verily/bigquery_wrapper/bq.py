@@ -33,13 +33,13 @@ from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
 from google.api_core import retry
+from google.api_core.exceptions import (BadGateway, InternalServerError, NotFound,
+                                        ServiceUnavailable,TooManyRequests)
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
-from google.cloud.exceptions import (BadGateway, GoogleCloudError, InternalServerError, NotFound,
-                                     ServiceUnavailable,TooManyRequests)
 from verily.bigquery_wrapper.bq_base import (MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER,
                                              validate_query_job)
 
