@@ -324,11 +324,15 @@ class Client(BigqueryBaseClient):
     @staticmethod
     def _transform_extract_day_of_week(query):
         """Transform EXTRACT(DAYOFWEEK to strftime function to get the day of the week
-         from a date or timestamp."""
+        from a date or timestamp.
+
+        Note: SQLite's EXTRACT(DAYOFWEEK) function returns a range from 0-6 (0 = Sunday), whereas
+        BQ returns a range from 1-7 (1 = Sunday), so we need to add 1 to the result.
+        """
         extract_regex = re.compile(r'EXTRACT\(DAYOFWEEK FROM (?P<colname>.+?)\)')
         match = re.search(extract_regex, query)
         while match:
-            repl_string = "CAST(strftime('%w', " + match.group('colname') + ") as INTEGER)"
+            repl_string = "CAST(strftime('%w', " + match.group('colname') + ") as INTEGER) + 1"
             query = query[:match.start()] + repl_string + query[match.end():]
             match = re.search(extract_regex, query)
         return query
