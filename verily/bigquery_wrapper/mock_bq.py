@@ -259,6 +259,7 @@ class Client(BigqueryBaseClient):
                     query = query.replace(qualified_table, sanitized_table)
 
         query = self._remove_query_prefix(query)
+        query = self._transform_booleans(query)
         query = self._transform_farmfingerprint(query)
         query = self._transform_extract_year(query)
         query = self._transform_extract_month(query)
@@ -295,6 +296,12 @@ class Client(BigqueryBaseClient):
         return query
 
     @staticmethod
+    def _transform_booleans(query):
+        """Surround booleans in quotation marks, since booleans get converted to TEXT in sqlite."""
+        query = query.replace('TRUE', '"{}"'.format(TRUE_STR))
+        return query.replace('FALSE', '"{}"'.format(FALSE_STR))
+
+    @staticmethod
     def _transform_extract_year(query):
         """Transform EXTRACT(YEAR to a substring operator to get the year
         from a YYYY-MM-DD timestamp or date.
@@ -319,7 +326,6 @@ class Client(BigqueryBaseClient):
             query = query[:match.start()] + repl_string + query[match.end():]
             match = re.search(extract_regex, query)
         return query
-
 
     @staticmethod
     def _transform_extract_day_of_week(query):

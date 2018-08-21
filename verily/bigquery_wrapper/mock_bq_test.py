@@ -55,6 +55,12 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
             [SchemaField('description', 'STRING'), SchemaField('is_good', 'BOOLEAN')],
             [['Description of something with \'single quotes\'', True]], )
 
+        cls.bool_table_name = cls.client.path('booleans', delimiter=BQ_PATH_DELIMITER)
+        cls.client.populate_table(
+            cls.bool_table_name,
+            [SchemaField('str_col', 'STRING'), SchemaField('bool_col', 'BOOLEAN')],
+            [['yes', True], ['no', False], ['yes2', True]], )
+
     @classmethod
     def setUpClass(cls):
         # type: () -> None
@@ -102,6 +108,20 @@ class MockBQTest(bq_shared_tests.BQSharedTests):
                                                    + 'FROM `{}`'.format(self.src_table_name),
                                      [('1 and 2', 3), ('4 and 5', 6)],
                                      enforce_ordering=False)
+
+    def test_query_needs_true_fixed(self):
+        # type: () -> None
+        self.expect_query_result('SELECT COUNT(1) FROM `{}` WHERE bool_col = TRUE'
+                                 .format(self.bool_table_name),
+                                 [(2,)],
+                                 enforce_ordering=False)
+
+    def test_query_needs_false_fixed(self):
+        # type: () -> None
+        self.expect_query_result('SELECT COUNT(1) FROM `{}` WHERE bool_col = FALSE'
+                                 .format(self.bool_table_name),
+                                 [(1,)],
+                                 enforce_ordering=False)
 
     def test_query_needs_extract_year_fixed(self):
         # type: () -> None
