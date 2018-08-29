@@ -611,8 +611,7 @@ def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    job.reload()
-    if job.state == 'DONE':
+    if job.done():
         if query:
             validate_query_job(job, query)
         return True
