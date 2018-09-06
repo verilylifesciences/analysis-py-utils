@@ -32,12 +32,11 @@ from collections import OrderedDict
 
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
-from google.api_core import retry
-from google.api_core.exceptions import (BadGateway, InternalServerError, NotFound,
-                                        ServiceUnavailable,TooManyRequests)
+from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
+from google.cloud.bigquery.retry import DEFAULT_RETRY
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from verily.bigquery_wrapper.bq_base import (MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER,
@@ -66,10 +65,7 @@ class Client(BigqueryBaseClient):
                  max_wait_secs=DEFAULT_TIMEOUT_SEC):
         self.gclient = bigquery.Client(project=project_id)
         self.max_wait_secs = max_wait_secs
-        self.default_retry = retry.Retry(
-            predicate=retry.if_exception_type(
-                (InternalServerError, TooManyRequests, ServiceUnavailable, BadGateway)),
-            deadline=max_wait_secs)
+        self.default_retry = DEFAULT_RETRY
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
