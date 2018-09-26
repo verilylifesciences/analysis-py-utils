@@ -97,7 +97,7 @@ class Client(BigqueryBaseClient):
         # Block until the job is done and return the result.
         return query_job.result(timeout=max_wait_secs)
 
-    def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=DEFAULT_TIMEOUT_SEC):
+    def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
         # type: (str, Optional[bool], Optional[int]) -> List[Tuple[Any]]
         """Returns a list or rows, each of which is a tuple of values.
 
@@ -118,7 +118,8 @@ class Client(BigqueryBaseClient):
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
 
-        rows = self._wait_for_job(query_job, query, max_wait_secs=max_wait_secs)
+        rows = self._wait_for_job(query_job, query,
+                                  max_wait_secs=max_wait_secs or self.max_wait_secs)
         return [x.values() for x in list(rows)]
 
     def get_table_reference_from_path(self, table_path):
@@ -141,7 +142,7 @@ class Client(BigqueryBaseClient):
                                 table_path,  # type: str
                                 write_disposition='WRITE_EMPTY',  # type: Optional[str]
                                 use_legacy_sql=False,  # type: Optional[bool]
-                                max_wait_secs=DEFAULT_TIMEOUT_SEC,  # type: Optional[int]
+                                max_wait_secs=None,  # type: Optional[int]
                                 expected_schema=None  # type: Optional[List[SchemaField]]
                                 ):
         # type: (...) -> None
@@ -175,7 +176,8 @@ class Client(BigqueryBaseClient):
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
 
-        return self._wait_for_job(query_job, query, max_wait_secs=max_wait_secs)
+        return self._wait_for_job(query_job, query,
+                                  max_wait_secs=max_wait_secs or self.max_wait_secs)
 
     def create_tables_from_dict(self,
                                 table_names_to_schemas,  # type: Dict[str, List[SchemaField]]
