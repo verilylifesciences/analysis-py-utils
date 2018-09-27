@@ -17,6 +17,8 @@
 from __future__ import absolute_import
 
 # Bigquery uses . to separate project, dataset, and table parts.
+import logging
+
 BQ_PATH_DELIMITER = '.'
 
 # The call to datasets to list all tables requires you to set a maximum number of tables
@@ -629,17 +631,21 @@ def validate_query_job(query_job, query):
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    if query_job.done() and query_job.error_result:  # validation error
-        msg = str(query_job.errors)
-        # This craziness puts line numbers next to the SQL.
-        lines = query.split('\n')
-        longest = max(len(l) for l in lines)
-        # Print out a 'ruler' above and below the SQL so we can judge columns.
-        ruler = ' ' * 4 + '|'  # Left pad for the line numbers (4 digits plus ':')
-        for _ in range(longest / 10):
-            ruler += ' ' * 4 + '.' + ' ' * 4 + '|'
-        header = '-----Offending Sql Follows-----'
-        padding = ' ' * ((longest - len(header)) / 2)
-        msg += '\n\n{}{}\n\n{}\n{}\n{}'.format(padding, header, ruler, '\n'.join(
-            '{:4}:{}'.format(n + 1, line) for n, line in enumerate(lines)), ruler)
-        raise RuntimeError(msg)
+    if query_job.done() and query_job.error_result:
+        if query_job.error_result['reason'] == 'invalidQuery':  # validation error
+            msg = str(query_job.errors)
+            # This craziness puts line numbers next to the SQL.
+            lines = query.split('\n')
+            longest = max(len(l) for l in lines)
+            # Print out a 'ruler' above and below the SQL so we can judge columns.
+            ruler = ' ' * 4 + '|'  # Left pad for the line numbers (4 digits plus ':')
+            for _ in range(longest / 10):
+                ruler += ' ' * 4 + '.' + ' ' * 4 + '|'
+            header = '-----Offending Sql Follows-----'
+            padding = ' ' * ((longest - len(header)) / 2)
+            msg += '\n\n{}{}\n\n{}\n{}\n{}'.format(padding, header, ruler, '\n'.join(
+                '{:4}:{}'.format(n + 1, line) for n, line in enumerate(lines)), ruler)
+            raise RuntimeError(msg)
+        else:
+            logging.warning('validate_query_job caught a non-validation error: {}'.format(
+                str(query_job.errors)))
