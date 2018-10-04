@@ -548,7 +548,8 @@ class Client(BigqueryBaseClient):
                                compression=False,  # type: Optional[bool]
                                output_ext='',  # type: Optional[str]
                                max_wait_secs=None,  # type: Optional[int]
-                               support_multifile_export=True # type: bool
+                               support_multifile_export=True, # type: bool
+                               explicit_filename=None  # type: Optional[str]
                                ):
         # type: (...) -> None
         """
@@ -569,6 +570,8 @@ class Client(BigqueryBaseClient):
             support_multifile_export: If True, and the table is large enough, then the table will be
                 exported as several files suffixed with a shard number. If False, it will be exported
                 as a single file.
+            explicit_filename: File name. Use it as file name if specified, otherwise use table ID,
+                maybe with output_ext, as file name
         Raises:
             RuntimeError if there is a problem with the export job.
         """
@@ -580,15 +583,20 @@ class Client(BigqueryBaseClient):
         src_table_ref = self.get_table_reference_from_path(table_path)
 
         # Generate the destination of the table content.
-        output_filename = src_table_ref.table_id
+        if explicit_filename:
+            output_filename = explicit_filename
+        else:
+            output_filename = src_table_ref.table_id
+            if output_ext:
+                output_filename += '_' + output_ext
+
         if support_multifile_export:
             # End in a * so that multiple shards can be written out if needed.
             output_filename += '*'
-        if output_ext:
-            output_filename += '_' + output_ext
         output_filename += '.' + output_format
         if compression:
             output_filename += '.gz'
+
         path = os.path.join(dir_in_bucket, output_filename)
 
         destination = 'gs://{}/{}'.format(bucket_name, path.lstrip().lstrip('/'))
@@ -607,7 +615,8 @@ class Client(BigqueryBaseClient):
                                 table_path,  # type: str
                                 bucket_name,  # type: str
                                 dir_in_bucket='',  # type: Optional[str]
-                                output_ext=''  # type: Optional[str]]
+                                output_ext='',  # type: Optional[str]
+                                explicit_filename=None,  # type: Optional[str]
                                 ):
         # type: (...) -> None
         """
@@ -621,14 +630,20 @@ class Client(BigqueryBaseClient):
             dir_in_bucket: The directory in the bucket to store the output files
             output_ext: An optional extension to output file. So that we can tell output files from
                 different exports
+            explicit_filename: File name. Use it as file name if specified, otherwise use table ID,
+                maybe with output_ext, as file name
         """
         table_project, dataset_id, table_name = self.parse_table_path(table_path)
 
         # Generate the destination of the table schema
-        schema_filename = table_name
-        if output_ext:
-            schema_filename += '_' + output_ext
+        if explicit_filename:
+            schema_filename = explicit_filename
+        else:
+            schema_filename = table_name
+            if output_ext:
+                schema_filename += '_' + output_ext
         schema_filename += '-schema.json'
+
         schema_path = os.path.join(dir_in_bucket, schema_filename).lstrip().lstrip('/')
 
         # Export schema as a json file to the bucket

@@ -95,16 +95,18 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                                'dummy_file', out_fmt, compression)
 
     # TODO (Issue 8): Add test to export tables from a project different from self.client.project_id
-    @data(('csv', True, '', '', 'tmp000000000000.csv.gz', True, 'csv w/ gzip'),
-          ('json', True, 'test', '', 'test/tmp000000000000.json.gz', True, 'json w/ gzip'),
-          ('avro', False, '/test', '', 'test/tmp.avro', False, 'Avro w/o gzip'),
-          ('csv', True, '', 'ext', 'tmp_ext.csv.gz', False, 'csv w/ gzip & ext'))
+    @data(('csv', True, '', '', None, 'tmp000000000000.csv.gz', True, 'csv w/ gzip'),
+          ('json', True, 'test', '', None, 'test/tmp000000000000.json.gz', True, 'json w/ gzip'),
+          ('avro', False, '/test', '', None, 'test/tmp.avro', False, 'Avro w/o gzip'),
+          ('csv', True, '', 'ext', None, 'tmp_ext.csv.gz', False, 'csv w/ gzip & ext'),
+          ('csv', True, '', '', 'overwritten_name', 'overwritten_name.csv.gz', False, 'overwriting filename'))  # noqa
     @unpack
     def test_export_table(self,
                           out_fmt,  # type: str
                           compression,  # type: bool
                           dir_in_bucket,  # type: str
                           output_ext,  # type: str
+                          explicit_filename,  # type: str
                           expected_output_path,  # type: str
                           support_multifile_export,  # type: bool
                           test_description  # type: str
@@ -116,13 +118,15 @@ class BQTest(bq_shared_tests.BQSharedTests):
             compression: Whether to compress file using GZIP. Cannot be applied to avro
             dir_in_bucket: The directory in the bucket to store the output files
             output_ext: Extension of the output file name
+            explicit_filename: Explicitly specified filename.
             expected_output_path: Expected output path
             test_description: A description of the test
         """
 
         self.client.export_table_to_bucket(self.src_table_name, self.temp_bucket_name,
                                            dir_in_bucket, out_fmt, compression, output_ext,
-                                           support_multifile_export=support_multifile_export)
+                                           support_multifile_export=support_multifile_export,
+                                           explicit_filename=explicit_filename)
 
         self.assertTrue(
                 isinstance(self.bucket.get_blob(expected_output_path), storage.Blob),
@@ -133,7 +137,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
     @data(('csv', True, '', '', 'tmp000000000000.csv.gz', 'csv w/ gzip', True),
           ('json', True, 'test', '', 'test/tmp000000000000.json.gz', 'json w/ gzip', False),
           ('avro', False, 'test', '', 'test/tmp000000000000.avro', 'Avro w/o gzip', False),
-          ('csv', True, '', 'ext', 'tmp000000000000_ext.csv.gz', 'csv w/ gzip & ext', True))
+          ('csv', True, '', 'ext', 'tmp_ext000000000000.csv.gz', 'csv w/ gzip & ext', True))
     @unpack
     def test_import_table_from_bucket(self,
                                       input_fmt,  # type: str
@@ -193,22 +197,31 @@ class BQTest(bq_shared_tests.BQSharedTests):
         self.assertItemsEqual(data, results)
 
     # TODO(Issue 7): Add test to export schemas from a project different from self.client.project_id
-    @data(('', '', 'tmp-schema.json', 'Export schema to root'),
-          ('test', '', 'test/tmp-schema.json', 'Export schema to /test'),
-          ('', 'ext', 'tmp_ext-schema.json', 'Export schema to root with extension'))
+    @data(('', '', None, 'tmp-schema.json', 'Export schema to root'),
+          ('test', '', None, 'test/tmp-schema.json', 'Export schema to /test'),
+          ('', 'ext', None, 'tmp_ext-schema.json', 'Export schema to root with extension'),
+          ('', '', 'overwritten_name', 'overwritten_name-schema.json', 'overwrite filename'))
     @unpack
-    def test_export_schema(self, dir_in_bucket, output_ext, expected_schema_path, test_description):
+    def test_export_schema(self,
+                           dir_in_bucket,  # type: str
+                           output_ext,  # type: str
+                           explicit_filename,  # type: str
+                           expected_schema_path,  # type: str
+                           test_description  # type:str
+                           ):
         # type: (str, str, str, str) -> None
         """Test ExportSchemaToBucket
          Args:
             dir_in_bucket: The directory in the bucket to store the output files
             output_ext: Extension of the output file name
+            explicit_filename: Explicitly specified filename.
             expected_output_path: Expected output path
             test_description: A description of the test
         """
 
         self.client.export_schema_to_bucket(self.src_table_name,
-                                            self.temp_bucket_name, dir_in_bucket, output_ext)
+                                            self.temp_bucket_name, dir_in_bucket, output_ext,
+                                            explicit_filename=explicit_filename)
 
         self.assertTrue(
                 isinstance(self.bucket.get_blob(expected_schema_path), storage.Blob),
