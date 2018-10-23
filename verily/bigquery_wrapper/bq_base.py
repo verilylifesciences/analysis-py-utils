@@ -35,6 +35,9 @@ TIME_CLASS = set(['TIMESTAMP', 'DATE', 'TIME', 'DATETIME'])
 BOOLEAN_CLASS = set(['BOOLEAN', 'BOOL'])
 DATATYPE_CLASSES = [INTEGER_CLASS, FLOAT_CLASS, TIME_CLASS, BOOLEAN_CLASS]
 
+# Values in the QueryJob.error_result dict that correspond to query validation errors.
+VALIDATION_ERROR_REASONS = ['invalidQuery', 'notFound', 'duplicate']
+
 
 class BigqueryBaseClient(object):
     """Stores credentials and pointers to a BigQuery project.
@@ -632,7 +635,7 @@ def validate_query_job(query_job, query):
         RuntimeError: If the job finished and returned an error result.
     """
     if query_job.done() and query_job.error_result:
-        if query_job.error_result['reason'] == 'invalidQuery':  # validation error
+        if query_job.error_result['reason'] in VALIDATION_ERROR_REASONS:  # validation error
             msg = str(query_job.errors)
             # This craziness puts line numbers next to the SQL.
             lines = query.split('\n')
