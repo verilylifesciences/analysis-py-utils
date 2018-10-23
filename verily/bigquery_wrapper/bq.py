@@ -425,6 +425,18 @@ class Client(BigqueryBaseClient):
                                                         rewind=True)
                 job.result()
 
+                # Diagnostic for populate_table flaky errors. This slows things down, so we should
+                # remove this as soon as it gives us something useful.
+                # Use get_query_results instead of the table's metadata to check emptiness, because
+                # the problem arises when we try to run get_query_results.
+                if self.get_query_results('SELECT COUNT(1) FROM `{}`'.format(table_path)) == [[0]]:
+                    logging.warning(
+                        'Populate table bug happened!\n'
+                        'job.error_result: {}\n'
+                        'data: {}\n'
+                        'output file: {}'.format(job.error_result, data, output.seek(0).readlines())
+                    )
+
                 output.close()
             else:
                 self._stream_chunks_of_rows(table, data, schema)
