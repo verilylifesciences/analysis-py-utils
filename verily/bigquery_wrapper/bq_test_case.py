@@ -366,7 +366,7 @@ class BQTestCase(unittest.TestCase):
         with open(schema_file) as f:
             schema_json = json.load(f)
         schema_list = [SchemaField(row['name'], row['type']) for row in schema_json]
-        cls.client.populate_table(table_path, schema_list, data)
+        cls.client.populate_table(table_path, schema_list, data, make_immediately_available=True)
 
     @staticmethod
     def _get_fields_from_schema(schema_file):
