@@ -30,6 +30,7 @@ import os
 import time
 from collections import OrderedDict
 
+from google.cloud.exceptions import BadRequest
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
 from google.api_core.exceptions import NotFound
@@ -423,6 +424,10 @@ class Client(BigqueryBaseClient):
                 job = self.gclient.load_table_from_file(output, table.reference,
                                                         job_config=job_config,
                                                         rewind=True)
+                try:
+                    job.result()
+                except BadRequest as e:
+                    raise BadRequest('{} Error stream: {}'.format(str(e), job.error_result))
                 job.result()
 
                 # Diagnostic for populate_table flaky errors. This slows things down, so we should
