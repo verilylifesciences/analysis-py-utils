@@ -118,6 +118,9 @@ class Client(BigqueryBaseClient):
         config.use_legacy_sql = use_legacy_sql
 
         query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
+        # Workaround for a BQ bug where the retry wasn't getting passed through.
+        # See https://github.com/googleapis/google-cloud-python/issues/6301
+        query_job._retry = self.default_retry
 
         rows = self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
