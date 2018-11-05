@@ -33,11 +33,13 @@ from collections import OrderedDict
 from google.cloud.exceptions import BadRequest
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
+from google.api_core.future.polling import _OperationNotComplete
+from google.api_core.retry import Retry
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
-from google.cloud.bigquery.retry import DEFAULT_RETRY
+from google.cloud.bigquery.retry import _should_retry, DEFAULT_RETRY
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from verily.bigquery_wrapper.bq_base import (MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER,
@@ -49,6 +51,23 @@ DEFAULT_TIMEOUT_SEC = 1200
 
 # Bigquery has a limit of max 10000 rows to insert per request
 MAX_ROWS_TO_INSERT = 10000
+
+
+def _polling_result_retry_predicate(exc):
+    """Determines whether to retry an exception that was raised by calling PollingFuture.result.
+
+    QueryJob inherits from _AsyncJob, which inherits from PollingFuture. PollingFuture has a class-
+    level exception, _OperationNotComplete, which signifies that the operation polled (e.g., getting
+    results from a query job) has not yet completed but has not failed. We want to retry the polling
+    if that's the case or if the polling encountered any other transient exception.
+
+    Args:
+        exc: The exception to determine whether to retry.
+
+    Returns:
+        True if we should retry the exception, False otherwise.
+    """
+    return isinstance(exc, _OperationNotComplete) or _should_retry(exc)
 
 
 class Client(BigqueryBaseClient):
@@ -66,7 +85,12 @@ class Client(BigqueryBaseClient):
                  max_wait_secs=DEFAULT_TIMEOUT_SEC):
         self.gclient = bigquery.Client(project=project_id)
         self.max_wait_secs = max_wait_secs
-        self.default_retry = DEFAULT_RETRY.with_deadline(max_wait_secs)
+        # Retry object for errors encountered in making API calls (executing jobs, etc.)
+        self.default_retry_for_api_calls = DEFAULT_RETRY.with_deadline(max_wait_secs)
+        # Retry object for errors encountered while polling jobs in progress.
+        # See https://github.com/googleapis/google-cloud-python/issues/6301
+        self.default_retry_for_async_jobs = Retry(predicate=_polling_result_retry_predicate,
+                                                  deadline=max_wait_secs)
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
@@ -117,10 +141,11 @@ class Client(BigqueryBaseClient):
 
         config.use_legacy_sql = use_legacy_sql
 
-        query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
-        # Workaround for a BQ bug where the retry wasn't getting passed through.
-        # See https://github.com/googleapis/google-cloud-python/issues/6301
-        query_job._retry = self.default_retry
+        query_job = self.gclient.query(query, job_config=config,
+                                       retry=self.default_retry_for_api_calls)
+        # The above retry is for errors encountered in executing the jobs. The below retry is
+        # for errors encountered in polling to see whether the job is done.
+        query_job._retry = self.default_retry_for_async_jobs
 
         rows = self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
@@ -178,7 +203,11 @@ class Client(BigqueryBaseClient):
 
         config.destination = self.get_table_reference_from_path(table_path)
 
-        query_job = self.gclient.query(query, job_config=config, retry=self.default_retry)
+        query_job = self.gclient.query(query, job_config=config,
+                                       retry=self.default_retry_for_api_calls)
+        # The above retry is for errors encountered in executing the jobs. The below retry is
+        # for errors encountered in polling to see whether the job is done.
+        query_job._retry = self.default_retry_for_async_jobs
 
         return self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
@@ -278,7 +307,7 @@ class Client(BigqueryBaseClient):
         """
         dataset_ref = DatasetReference(self.project_id, dataset_id)
 
-        tables = self.gclient.list_tables(dataset_ref, retry=self.default_retry)
+        tables = self.gclient.list_tables(dataset_ref, retry=self.default_retry_for_api_calls)
         return [t.table_id for t in tables]
 
     def get_schema(self, dataset_id, table_name, project_id=None):
@@ -295,7 +324,7 @@ class Client(BigqueryBaseClient):
 
         dataset_ref = DatasetReference(project_id if project_id else self.project_id, dataset_id)
         table = self.gclient.get_table(TableReference(dataset_ref, table_name),
-                                       retry=self.default_retry)
+                                       retry=self.default_retry_for_api_calls)
 
         return table.schema
 
@@ -306,8 +335,8 @@ class Client(BigqueryBaseClient):
         Returns:
             A list of dataset ids/names (strings).
         """
-        return [x.dataset_id for x in self.gclient.list_datasets(max_results=MAX_TABLES,
-                                                                 retry=self.default_retry)]
+        return [x.dataset_id for x in self.gclient.list_datasets(
+            max_results=MAX_TABLES, retry=self.default_retry_for_api_calls)]
 
     @staticmethod
     def _convert_row_tuples_to_dicts(data, schema):
@@ -368,7 +397,7 @@ class Client(BigqueryBaseClient):
                               .insert_rows(table,
                                            self._convert_row_tuples_to_dicts(data[start:end],
                                                                              table_schema),
-                                           retry=self.default_retry))
+                                           retry=self.default_retry_for_api_calls))
             start = end
 
         if error_list:
@@ -457,7 +486,7 @@ class Client(BigqueryBaseClient):
         """
 
         table = self.gclient.get_table(self.get_table_reference_from_path(table_path),
-                                       retry=self.default_retry)
+                                       retry=self.default_retry_for_api_calls)
 
         if not self.table_exists(table):
             raise RuntimeError("The table " + table_path + " doesn't exist.")
@@ -614,7 +643,7 @@ class Client(BigqueryBaseClient):
         config.compression = 'GZIP' if compression else 'NONE'
 
         extract_job = self.gclient.extract_table(src_table_ref, destination, job_config=config,
-                                                 retry=self.default_retry)
+                                                 retry=self.default_retry_for_api_calls)
 
         # Wait for completion
         extract_job.result(timeout=max_wait_secs or self.max_wait_secs)
@@ -742,7 +771,7 @@ class Client(BigqueryBaseClient):
         job_config = self._make_load_job_config(input_format, write_disposition,
                                                 schema, skip_leading_row)
         load_job = self.gclient.load_table_from_uri(source_uri, table_ref,
-                                                    retry=self.default_retry,
+                                                    retry=self.default_retry_for_api_calls,
                                                     job_config=job_config)
         load_job.result(max_wait_secs or self.max_wait_secs)
 
@@ -799,7 +828,7 @@ class Client(BigqueryBaseClient):
             dataset = dataset.reference
 
         try:
-            self.gclient.get_dataset(dataset, retry=self.default_retry)
+            self.gclient.get_dataset(dataset, retry=self.default_retry_for_api_calls)
             return True
         except NotFound:
             return False
@@ -818,7 +847,7 @@ class Client(BigqueryBaseClient):
             table = table.reference
 
         try:
-            self.gclient.get_table(table, retry=self.default_retry)
+            self.gclient.get_table(table, retry=self.default_retry_for_api_calls)
             return True
         except NotFound:
             return False
@@ -834,7 +863,7 @@ class Client(BigqueryBaseClient):
             dataset: The Dataset or DatasetReference to delete.
             delete_contents: If True, delete all tables in the dataset before deleting it.
         """
-        self.gclient.delete_dataset(dataset, retry=self.default_retry,
+        self.gclient.delete_dataset(dataset, retry=self.default_retry_for_api_calls,
                                     delete_contents=delete_contents)
 
     def delete_table(self,
@@ -846,7 +875,7 @@ class Client(BigqueryBaseClient):
         Args:
             table: The Table or TableReference to delete.
         """
-        self.gclient.delete_table(table, retry=self.default_retry)
+        self.gclient.delete_table(table, retry=self.default_retry_for_api_calls)
 
     def create_dataset(self,
                        dataset  # type: Union[DatasetReference, Dataset]
