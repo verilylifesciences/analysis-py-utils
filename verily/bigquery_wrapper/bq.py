@@ -66,7 +66,7 @@ class Client(BigqueryBaseClient):
                  max_wait_secs=DEFAULT_TIMEOUT_SEC):
         self.gclient = bigquery.Client(project=project_id)
         self.max_wait_secs = max_wait_secs
-        self.default_retry = DEFAULT_RETRY
+        self.default_retry = DEFAULT_RETRY.with_deadline(max_wait_secs)
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
