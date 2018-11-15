@@ -618,9 +618,6 @@ def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    # Workaround for a BQ bug where the retry wasn't getting passed through.
-    # See https://github.com/googleapis/google-cloud-python/issues/6301
-    job._retry = DEFAULT_RETRY
     if job.done():
         if query:
             validate_query_job(job, query)
