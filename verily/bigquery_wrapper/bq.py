@@ -30,16 +30,15 @@ import os
 import time
 from collections import OrderedDict
 
+from google.api_core.future import polling
 from google.cloud.exceptions import BadRequest
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
-from google.api_core.future.polling import _OperationNotComplete
-from google.api_core.retry import Retry
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
-from google.cloud.bigquery.retry import _should_retry, DEFAULT_RETRY
+from google.cloud.bigquery import retry as bq_retry
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from verily.bigquery_wrapper.bq_base import (MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER,
@@ -51,23 +50,6 @@ DEFAULT_TIMEOUT_SEC = 1200
 
 # Bigquery has a limit of max 10000 rows to insert per request
 MAX_ROWS_TO_INSERT = 10000
-
-
-def _polling_result_retry_predicate(exc):
-    """Determines whether to retry an exception that was raised by calling PollingFuture.result.
-
-    QueryJob inherits from _AsyncJob, which inherits from PollingFuture. PollingFuture has a class-
-    level exception, _OperationNotComplete, which signifies that the operation polled (e.g., getting
-    results from a query job) has not yet completed but has not failed. We want to retry the polling
-    if that's the case or if the polling encountered any other transient exception.
-
-    Args:
-        exc: The exception to determine whether to retry.
-
-    Returns:
-        True if we should retry the exception, False otherwise.
-    """
-    return isinstance(exc, _OperationNotComplete) or _should_retry(exc)
 
 
 class Client(BigqueryBaseClient):
@@ -86,11 +68,10 @@ class Client(BigqueryBaseClient):
         self.gclient = bigquery.Client(project=project_id)
         self.max_wait_secs = max_wait_secs
         # Retry object for errors encountered in making API calls (executing jobs, etc.)
-        self.default_retry_for_api_calls = DEFAULT_RETRY.with_deadline(max_wait_secs)
+        self.default_retry_for_api_calls = bq_retry.DEFAULT_RETRY.with_deadline(max_wait_secs)
         # Retry object for errors encountered while polling jobs in progress.
         # See https://github.com/googleapis/google-cloud-python/issues/6301
-        self.default_retry_for_async_jobs = Retry(predicate=_polling_result_retry_predicate,
-                                                  deadline=max_wait_secs)
+        self.default_retry_for_async_jobs = polling.DEFAULT_RETRY.with_deadline(max_wait_secs)
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
