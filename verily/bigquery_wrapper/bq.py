@@ -130,6 +130,8 @@ class Client(BigqueryBaseClient):
 
         rows = self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
+        if query_job.errors:
+            logging.warning('Errors in get_query_results: {}'.format(query_job.errors))
         return [x.values() for x in list(rows)]
 
     def get_table_reference_from_path(self, table_path):
