@@ -28,6 +28,7 @@ import os
 import random
 import sys
 import unittest
+import uuid
 
 import numpy as np
 import pandas as pd
@@ -125,6 +126,12 @@ class BQTestCase(unittest.TestCase):
         """Subclasses should override this to create up mock tables."""
 
         raise NotImplementedError("BQTestCase is an abstract class.")
+
+    @staticmethod
+    def make_n_digit_random_number(n):
+        if not isinstance(n, int) or n < 1 or n > 36:
+            raise ValueError('n must be an integer between 1 and 36.')
+        return str(uuid.uuid4().int)[:n]
 
     @staticmethod
     def create_synthetic_table_query(cols, rows):
