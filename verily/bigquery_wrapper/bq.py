@@ -387,7 +387,7 @@ class Client(BigqueryBaseClient):
             raise RuntimeError('Could not insert rows. Reported errors:\n' +
                                self._make_errors_readable(error_list))
 
-    def populate_table(self, table_path, schema, data=[], make_immediately_available=False,
+    def populate_table(self, table_path, schema, data=[], make_immediately_available=True,
                        replace_existing_table=False):
         # type: (str, List[SchemaField], Optional[List[Any]], Optional[bool], Optional[bool]) -> None
         """Creates a table and populates it with a list of rows.

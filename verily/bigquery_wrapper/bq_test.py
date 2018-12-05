@@ -71,7 +71,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
         self.client.populate_table(table_name,
                                    [SchemaField('foo', 'INTEGER'),
                                     SchemaField('bar', 'INTEGER', mode='REPEATED')],
-                                   [[1, [2, 3]], [4, [5, 6]]])
+                                   [[1, [2, 3]], [4, [5, 6]]], make_immediately_available=False)
 
         self.client.append_rows(table_name, [[7, [8, 9]]])
 
