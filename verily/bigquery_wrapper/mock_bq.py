@@ -598,6 +598,9 @@ class Client(BigqueryBaseClient):
           name: The name of the new dataset.
           expiration_hours: Unused in this implementation.
         """
+        if name in self.table_map:
+            logging.warning('Dataset {} already exists.'.format(name))
+            return
         self.project_map[self.project_id].append(name)
         self.table_map[name] = []
 
