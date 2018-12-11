@@ -612,7 +612,7 @@ class Client(BigqueryBaseClient):
 
         if support_multifile_export:
             # End in a * so that multiple shards can be written out if needed.
-            output_filename += '*'
+            output_filename += '-*'
         output_filename += '.' + output_format
         if compression:
             output_filename += '.gz'

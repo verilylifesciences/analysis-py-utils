@@ -95,8 +95,8 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                                'dummy_file', out_fmt, compression)
 
     # TODO (Issue 8): Add test to export tables from a project different from self.client.project_id
-    @data(('csv', True, '', '', None, 'tmp000000000000.csv.gz', True, 'csv w/ gzip'),
-          ('json', True, 'test', '', None, 'test/tmp000000000000.json.gz', True, 'json w/ gzip'),
+    @data(('csv', True, '', '', None, 'tmp-000000000000.csv.gz', True, 'csv w/ gzip'),
+          ('json', True, 'test', '', None, 'test/tmp-000000000000.json.gz', True, 'json w/ gzip'),
           ('avro', False, '/test', '', None, 'test/tmp.avro', False, 'Avro w/o gzip'),
           ('csv', True, '', 'ext', None, 'tmp_ext.csv.gz', False, 'csv w/ gzip & ext'),
           ('csv', True, '', '', 'overwritten_name', 'overwritten_name.csv.gz', False, 'overwriting filename'))  # noqa
@@ -134,10 +134,10 @@ class BQTest(bq_shared_tests.BQSharedTests):
                            ': File {} is not in {}'.format(expected_output_path,
                                                            str([x for x in self.bucket.list_blobs()])))
 
-    @data(('csv', True, '', '', 'tmp000000000000.csv.gz', 'csv w/ gzip', True),
-          ('json', True, 'test', '', 'test/tmp000000000000.json.gz', 'json w/ gzip', False),
-          ('avro', False, 'test', '', 'test/tmp000000000000.avro', 'Avro w/o gzip', False),
-          ('csv', True, '', 'ext', 'tmp_ext000000000000.csv.gz', 'csv w/ gzip & ext', True))
+    @data(('csv', True, '', '', 'tmp-000000000000.csv.gz', 'csv w/ gzip', True),
+          ('json', True, 'test', '', 'test/tmp-000000000000.json.gz', 'json w/ gzip', False),
+          ('avro', False, 'test', '', 'test/tmp-000000000000.avro', 'Avro w/o gzip', False),
+          ('csv', True, '', 'ext', 'tmp_ext-000000000000.csv.gz', 'csv w/ gzip & ext', True))
     @unpack
     def test_import_table_from_bucket(self,
                                       input_fmt,  # type: str
