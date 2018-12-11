@@ -579,7 +579,7 @@ class Client(BigqueryBaseClient):
         # If the flag isn't set to replace existing tables, raise an error if any tables we're
         # trying to create already exist.
         if not replace_existing_tables:
-            self._raise_if_tables_exist(table_names_to_schemas.keys())
+            self._raise_if_tables_exist(table_names_to_schemas.keys(), dataset_id)
 
         for table_name, schema in table_names_to_schemas.iteritems():
             table_path = self.path(table_name, dataset_id=dataset_id, project_id=self.project_id,

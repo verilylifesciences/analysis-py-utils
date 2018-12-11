@@ -357,6 +357,22 @@ class BQSharedTests(bq_test_case.BQTestCase):
         self.client.delete_dataset_by_name(temp_default_test_dataset_id, True)
         self.assertTrue(temp_default_test_dataset_id not in self.client.get_datasets())
 
+    def test_repeated_create_dataset_and_tables_raises(self):
+        # type: () -> None
+        dataset_name = self.default_test_dataset_id + '_repeated_create'
+        self.client.create_dataset_by_name(dataset_name)
+        dest_table = 'some_table'
+        self.client.create_tables_from_dict({dest_table: FOO_BAR_BAZ_INTEGERS_SCHEMA},
+                                            dataset_id=dataset_name,
+                                            replace_existing_tables=False)
+        self.client.create_dataset_by_name(dataset_name)
+        self.assertIn(dest_table, self.client.tables(dataset_name))
+        with self.assertRaises(RuntimeError):
+            self.client.create_tables_from_dict(
+                {dest_table: FOO_BAR_BAZ_INTEGERS_SCHEMA},
+                dataset_id=dataset_name,
+                replace_existing_tables=False)
+
     def test_populate_sparse_table(self):
         # type: () -> None
         """Test bq_test_case.populate_sparse_table"""
