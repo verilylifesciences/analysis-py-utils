@@ -77,7 +77,7 @@ class Client(BigqueryBaseClient):
         self.project_map[self.project_id] = []
 
         self.table_map = {}
-        self.table_map[default_dataset] = []
+        self.create_dataset_by_name(default_dataset)
 
         self.print_before_and_after = print_before_and_after
 
