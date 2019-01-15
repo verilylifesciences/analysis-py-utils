@@ -29,7 +29,7 @@ pip install --upgrade setuptools
 pip install .
 
 # Check the version of sqlite3 installed.
-python -c "import sqlite3; print(sqlite3.sqlite_version)"
+python -c "from pysqlite2 import dbapi2 as sqlite3; print(sqlite3.sqlite_version)"
 
 if [[ -v GOOGLE_APPLICATION_CREDENTIALS ]] && [[ -v TEST_PROJECT ]];
 then python -m verily.bigquery_wrapper.bq_test

@@ -35,4 +35,5 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     description='Python utilities for data analysis.',
+    scripts=['setup_pysqlite.sh'],
     requires=[])
