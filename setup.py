@@ -17,10 +17,10 @@ from setuptools import find_packages
 from setuptools import setup
 
 REQUIRED_PACKAGES = ['pandas',
-                     'google-api-core==1.5.1',
+                     'google-api-core==1.6.0',
                      'google-auth==1.4.1',
-                     'google-cloud-bigquery==1.7.0',
-                     'google-cloud-storage==1.10.0',
+                     'google-cloud-bigquery==1.8.0',
+                     'google-cloud-storage==1.13.1',
                      'pysqlite>=2.8.3',
                      'ddt',
                      'typing']
