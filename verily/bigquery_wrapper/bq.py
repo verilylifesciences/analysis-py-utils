@@ -51,6 +51,10 @@ DEFAULT_TIMEOUT_SEC = 1200
 # Bigquery has a limit of max 10000 rows to insert per request
 MAX_ROWS_TO_INSERT = 10000
 
+# When exporting data to multiple files, BQ pads the shard number to 12 digits. See:
+# https://cloud.google.com/bigquery/docs/exporting-data#exporting_data_into_one_or_more_files
+MULTIFILE_EXPORT_PAD_LENGTH = 12
+
 
 class Client(BigqueryBaseClient):
     """Stores credentials and pointers to a BigQuery project.
@@ -571,7 +575,7 @@ class Client(BigqueryBaseClient):
                                support_multifile_export=True, # type: bool
                                explicit_filename=None  # type: Optional[str]
                                ):
-        # type: (...) -> None
+        # type: (...) -> List[str]
         """
         Export a BigQuery table to a file (or a set of files)
         in the given bucket. The output files will be in a directory with the same name
@@ -592,6 +596,10 @@ class Client(BigqueryBaseClient):
                 as a single file.
             explicit_filename: File name. Use it as file name if specified, otherwise use table ID,
                 maybe with output_ext, as file name
+
+        Returns:
+            A list of the names of the files exported.
+
         Raises:
             RuntimeError if there is a problem with the export job.
         """
@@ -631,6 +639,18 @@ class Client(BigqueryBaseClient):
         # Wait for completion
         extract_job.result(timeout=max_wait_secs or self.max_wait_secs)
 
+        # Get the names of the files exported.
+        if support_multifile_export:
+            # destination_uri_file_counts is a list of ints representing the number of files
+            # exported to each destination URI. Since we are only exporting to one destination, we
+            # just need the first element.
+            num_files_exported = extract_job.destination_uri_file_counts[0]
+            # Multi-file export replaces the "*" with the file number, padded to 12 digits. See:
+            # https://cloud.google.com/bigquery/docs/exporting-data#exporting_data_into_one_or_more_files  # noqa
+            return [output_filename.replace('*', str(i).zfill(MULTIFILE_EXPORT_PAD_LENGTH))
+                    for i in range(num_files_exported)]
+        return [output_filename]
+
     def export_schema_to_bucket(self,
                                 table_path,  # type: str
                                 bucket_name,  # type: str
@@ -638,7 +658,7 @@ class Client(BigqueryBaseClient):
                                 output_ext='',  # type: Optional[str]
                                 explicit_filename=None,  # type: Optional[str]
                                 ):
-        # type: (...) -> None
+        # type: (...) -> str
         """
         Export a BigQuery table's schema to a json file in the given bucket. The output file's
         name is <BQ table name>-schema.json
@@ -652,6 +672,9 @@ class Client(BigqueryBaseClient):
                 different exports
             explicit_filename: File name. Use it as file name if specified, otherwise use table ID,
                 maybe with output_ext, as file name
+
+        Returns:
+            The name of the schema file exported.
         """
         table_project, dataset_id, table_name = self.parse_table_path(table_path)
 
@@ -676,6 +699,7 @@ class Client(BigqueryBaseClient):
                                         storage.Client(self.project_id).bucket(bucket_name))
 
         schema_blob.upload_from_string(json.dumps(schema, indent=2, separators=(',', ':')))
+        return schema_filename
 
     @staticmethod
     def _convert_to_bq_format(format):

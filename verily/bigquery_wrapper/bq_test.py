@@ -23,7 +23,9 @@ import uuid
 
 from ddt import data, ddt, unpack
 from google.cloud import storage
+from google.cloud.bigquery import ExtractJob
 from google.cloud.bigquery.schema import SchemaField
+from mock import patch, PropertyMock
 
 from verily.bigquery_wrapper import bq_shared_tests, bq_test_case
 
@@ -123,16 +125,29 @@ class BQTest(bq_shared_tests.BQSharedTests):
             test_description: A description of the test
         """
 
-        self.client.export_table_to_bucket(self.src_table_name, self.temp_bucket_name,
-                                           dir_in_bucket, out_fmt, compression, output_ext,
-                                           support_multifile_export=support_multifile_export,
-                                           explicit_filename=explicit_filename)
+        fnames = self.client.export_table_to_bucket(
+            self.src_table_name, self.temp_bucket_name, dir_in_bucket, out_fmt, compression,
+            output_ext, support_multifile_export=support_multifile_export,
+            explicit_filename=explicit_filename)
 
+        # Test that the output file name is returned (everything after the last "/" of the path).
+        self.assertEqual(fnames, [expected_output_path.rsplit('/', 1)[-1]])
+
+        # Test that the object is in the bucket.
         self.assertTrue(
                 isinstance(self.bucket.get_blob(expected_output_path), storage.Blob),
                            test_description +
                            ': File {} is not in {}'.format(expected_output_path,
                                                            str([x for x in self.bucket.list_blobs()])))
+
+    def test_export_table_multifile(self):
+        """Test correct filenames returned for export with multiple files created."""
+        with patch.object(ExtractJob, 'destination_uri_file_counts',
+                          new_callable=PropertyMock) as file_counts_mock:
+            file_counts_mock.return_value = [2]
+            fnames = self.client.export_table_to_bucket(
+                self.src_table_name, self.temp_bucket_name, support_multifile_export=True)
+            self.assertSetEqual(set(fnames), {'tmp-000000000000.csv', 'tmp-000000000001.csv'})
 
     @data(('csv', True, '', '', 'tmp-000000000000.csv.gz', 'csv w/ gzip', True),
           ('json', True, 'test', '', 'test/tmp-000000000000.json.gz', 'json w/ gzip', False),
@@ -219,10 +234,14 @@ class BQTest(bq_shared_tests.BQSharedTests):
             test_description: A description of the test
         """
 
-        self.client.export_schema_to_bucket(self.src_table_name,
-                                            self.temp_bucket_name, dir_in_bucket, output_ext,
-                                            explicit_filename=explicit_filename)
+        fname = self.client.export_schema_to_bucket(self.src_table_name, self.temp_bucket_name,
+                                                    dir_in_bucket, output_ext,
+                                                    explicit_filename=explicit_filename)
 
+        # Test that the output file name is returned (everything after the last "/" of the path).
+        self.assertEqual(fname, expected_schema_path.rsplit('/', 1)[-1])
+
+        # Test that the object is in the bucket.
         self.assertTrue(
                 isinstance(self.bucket.get_blob(expected_schema_path), storage.Blob),
                 test_description)
