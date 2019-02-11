@@ -72,11 +72,14 @@ class BQTestCase(unittest.TestCase):
     tables_created_in_constructor = []
 
     @classmethod
-    def setUpClass(cls, use_mocks=False):
+    def setUpClass(cls, use_mocks=False, google_bq_client=None):
         """Sets up BQ client and creates dataset and tables for testing.
 
         Args:
             use_mocks: Whether to use a mock implementation of the client.
+            google_bq_client: If provided, a client implementing the Google BigQuery API.
+                If not provided, the real BigQuery client will create is own instance of the google
+                client.
         """
         force_use_real_bq = bool(cls.FORCE_USE_REAL_BQ)
         if force_use_real_bq:
@@ -94,7 +97,8 @@ class BQTestCase(unittest.TestCase):
               raise ValueError("Environment variable 'TEST_PROJECT' is not set. "
                                "Set its value to be the project id in which you "
                                "wish to run test queries.")
-            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id)
+            cls.client = real_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id,
+                                        google_bq_client)
         # Make the tables in the test datasets expire after an hour.
         cls.client.create_dataset_by_name(cls.default_test_dataset_id,
                                           expiration_hours=EXPIRATION_HOURS)
