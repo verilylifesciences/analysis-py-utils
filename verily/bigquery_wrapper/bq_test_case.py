@@ -98,7 +98,7 @@ class BQTestCase(unittest.TestCase):
                                "Set its value to be the project id in which you "
                                "wish to run test queries.")
             cls.client = real_bq.Client(cls.TEST_PROJECT, cls.default_test_dataset_id,
-                                        google_bq_client)
+                                        google_bq_client=google_bq_client)
         # Make the tables in the test datasets expire after an hour.
         cls.client.create_dataset_by_name(cls.default_test_dataset_id,
                                           expiration_hours=EXPIRATION_HOURS)
