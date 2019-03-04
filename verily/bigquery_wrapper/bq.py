@@ -65,13 +65,13 @@ class Client(BigqueryBaseClient):
       maximum_billing_tier: Optional. The maximum billing tier to use for operations.
       max_wait_secs: Optional. The amount of time to keep retrying operations, or to wait on an
           operation to finish. If not set, will default to DEFAULT_TIMEOUT_SEC
-      google_bq_client: Optional.  If provided, the client will use this instance rather than
-          creating its own.
+      alternate_bq_client_class: Optional.  If provided, the client will use this class to create an
+          instance rather than the Google one.
     """
 
     def __init__(self, project_id, default_dataset=None, maximum_billing_tier=None,
-                 max_wait_secs=DEFAULT_TIMEOUT_SEC, google_bq_client=None):
-        self.gclient = google_bq_client or bigquery.Client(project=project_id)
+                 max_wait_secs=DEFAULT_TIMEOUT_SEC, alternate_bq_client_class=None):
+        self.gclient = (alternate_bq_client_class or bigquery.Client)(project=project_id)
         self.max_wait_secs = max_wait_secs
         # Retry object for errors encountered in making API calls (executing jobs, etc.)
         self.default_retry_for_api_calls = bq_retry.DEFAULT_RETRY.with_deadline(max_wait_secs)
