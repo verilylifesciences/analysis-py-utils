@@ -20,14 +20,17 @@ import cStringIO
 import csv
 import random
 import uuid
+from datetime import datetime
 
+import google
 from ddt import data, ddt, unpack
+from google.api_core import exceptions, retry
 from google.cloud import storage
 from google.cloud.bigquery import ExtractJob
 from google.cloud.bigquery.schema import SchemaField
-from mock import patch, PropertyMock
+from mock import MagicMock, PropertyMock, patch
 
-from verily.bigquery_wrapper import bq_shared_tests, bq_test_case
+from verily.bigquery_wrapper import bq, bq_shared_tests, bq_test_case
 
 
 @ddt
@@ -252,6 +255,90 @@ class BQTest(bq_shared_tests.BQSharedTests):
         with self.assertRaises(RuntimeError) as e:
             self.client.get_query_results(query)
         self.assertTrue(query in str(e.exception))
+
+    @data(
+        dict(
+            exc=exceptions.BadRequest('Extra comma before FROM clause.'),
+            should_retry=False
+        ),
+        dict(
+            exc=exceptions.BadRequest(
+                'The job encountered an internal error during execution. (Transient error.)'),
+            should_retry=True
+        ),
+        dict(
+            exc=exceptions.InternalServerError('Transient error.'),
+            should_retry=True
+        ),
+        dict(
+            exc=exceptions.TooManyRequests('Transient error.'),
+            should_retry=True
+        ),
+        dict(
+            exc=exceptions.BadGateway('Transient error.'),
+            should_retry=True
+        ),
+    )
+    @unpack
+    def test_get_query_results_retries_on_transient_error(self, exc, should_retry):
+        # type: (Exception, bool) -> None
+        """Tests that get_query_results retries on transient unstructured errors.
+
+        Mocks out the api_request function, which actually makes the backend call.
+
+        Args:
+            exc: The exception to raise on the first two calls to api_request. If get_query_results
+                retries the api call on both exceptions, the real api_request function will be
+                called all following times.
+            should_retry: Whether get_query_results is expected to retry on the given exception.
+        """
+        raised_exceptions = iter([exc, exc])
+        # Make a copy of the api_request function that is not mocked out.
+        copy_of_api_request = google.cloud._http.JSONConnection.api_request
+        with patch('google.cloud._http.JSONConnection.api_request') as mock_api_request:
+            def api_request_side_effect(*args, **kwargs):
+                """The function to execute instead of api_request.
+
+                Raises the next exception in raised_exceptions every time this is called. When there
+                are no exceptions left in raised_exceptions, calls the real API.
+                """
+                try:
+                    raise next(raised_exceptions)
+                except StopIteration:
+                    return copy_of_api_request(self.client.gclient._connection, *args, **kwargs)
+
+            mock_api_request.side_effect = api_request_side_effect
+
+            if should_retry:
+                self.assertEqual(self.client.get_query_results('SELECT 5'), [(5,)])
+            else:
+                with self.assertRaises(type(exc)):
+                    self.client.get_query_results('SELECT 5')
+
+    @patch('google.cloud._http.JSONConnection.api_request')
+    def test_get_query_results_raises_error_if_deadline_exceeded(self, mock_api_request):
+        # type: (MagicMock) -> None
+        """Tests that get_query_results raises a RetryError if the deadline is exceeded.
+
+        Args:
+            mock_api_request: The MagicMock object for the api_request method.
+        """
+        # Raise a transient error on every API request so that the job doesn't finish.
+        mock_api_request.side_effect = exceptions.InternalServerError('Transient error.')
+
+        client_in_a_hurry = bq.Client(self.TEST_PROJECT, max_wait_secs=1)
+        before_get_query_results = datetime.now()
+        with self.assertRaises(exceptions.RetryError):
+            client_in_a_hurry.get_query_results('SELECT 5')
+
+        # Test that the process timed out before the default timeout. (It should time out after 1
+        # second, but this leaves buffer for BQ being slow.)
+        # Use the underlying Retry library's default timeout, because it's shorter than our
+        # DEFAULT_TIMEOUT_SEC, and we want to fail if our timeout didn't get passed in somehow.
+        diff = datetime.now() - before_get_query_results
+        self.assertTrue(diff.seconds < retry._DEFAULT_DEADLINE)
+
+    # TODO(Issue 23): Fill out remaining tests for retry logic.
 
 
 if __name__ == '__main__':

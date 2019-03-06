@@ -35,6 +35,7 @@ from google.cloud.exceptions import BadRequest
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
 from google.api_core.exceptions import NotFound
+from google.api_core.retry import Retry
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
@@ -56,6 +57,17 @@ MAX_ROWS_TO_INSERT = 10000
 MULTIFILE_EXPORT_PAD_LENGTH = 12
 
 
+def _transient_string_in_exception_message(exc):
+    # type: (Exception) -> bool
+    """Determines whether an exception's message contains a common message for transient errors.
+
+    The exception's message containing one of these substrings is sufficient to determine that it is
+    transient, but there can be transient exceptions whose messages do not contain these substrings.
+    """
+    return ('The job encountered an internal error during execution' in str(exc) or
+            'Retrying the job may solve the problem' in str(exc))
+
+
 class Client(BigqueryBaseClient):
     """Stores credentials and pointers to a BigQuery project.
 
@@ -74,10 +86,18 @@ class Client(BigqueryBaseClient):
         self.gclient = (alternate_bq_client_class or bigquery.Client)(project=project_id)
         self.max_wait_secs = max_wait_secs
         # Retry object for errors encountered in making API calls (executing jobs, etc.)
-        self.default_retry_for_api_calls = bq_retry.DEFAULT_RETRY.with_deadline(max_wait_secs)
+        self.default_retry_for_api_calls = Retry(
+            # The predicate takes an exception and returns whether it is transient.
+            predicate=lambda exc: (bq_retry.DEFAULT_RETRY._predicate(exc) or
+                                   _transient_string_in_exception_message(exc)),
+            deadline=max_wait_secs)
         # Retry object for errors encountered while polling jobs in progress.
         # See https://github.com/googleapis/google-cloud-python/issues/6301
-        self.default_retry_for_async_jobs = polling.DEFAULT_RETRY.with_deadline(max_wait_secs)
+        self.default_retry_for_async_jobs = Retry(
+            # The predicate takes an exception and returns whether it is transient.
+            predicate=lambda exc: (polling.DEFAULT_RETRY._predicate(exc) or
+                                   _transient_string_in_exception_message(exc)),
+            deadline=max_wait_secs)
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
