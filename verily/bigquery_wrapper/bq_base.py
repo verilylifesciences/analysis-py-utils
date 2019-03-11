@@ -16,11 +16,13 @@
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
-# Bigquery uses . to separate project, dataset, and table parts.
 import logging
 
-from google.cloud.bigquery import DEFAULT_RETRY
+from google.api_core.future import polling
+from google.api_core.retry import Retry
+from google.cloud.bigquery import retry as bq_retry
 
+# Bigquery uses . to separate project, dataset, and table parts.
 BQ_PATH_DELIMITER = '.'
 
 # The call to datasets to list all tables requires you to set a maximum number of tables
@@ -39,6 +41,35 @@ DATATYPE_CLASSES = [INTEGER_CLASS, FLOAT_CLASS, TIME_CLASS, BOOLEAN_CLASS]
 
 # Values in the QueryJob.error_result dict that correspond to query validation errors.
 VALIDATION_ERROR_REASONS = ['invalidQuery', 'notFound', 'duplicate']
+
+# The default timeout for any BigQuery operations executed in real BQ.
+DEFAULT_TIMEOUT_SEC = 1200
+
+
+def _transient_string_in_exception_message(exc):
+    # type: (Exception) -> bool
+    """Determines whether an exception's message contains a common message for transient errors.
+
+    The exception's message containing one of these substrings is sufficient to determine that it is
+    transient, but there can be transient exceptions whose messages do not contain these substrings.
+    """
+    return ('The job encountered an internal error during execution' in str(exc) or
+            'Retrying the job may solve the problem' in str(exc))
+
+# Retry object for errors encountered in making API calls (executing jobs, etc.)
+DEFAULT_RETRY_FOR_API_CALLS = Retry(
+    # The predicate takes an exception and returns whether it is transient.
+    predicate=lambda exc: (bq_retry.DEFAULT_RETRY._predicate(exc) or
+                           _transient_string_in_exception_message(exc)),
+    deadline=DEFAULT_TIMEOUT_SEC)
+
+# Retry object for errors encountered while polling jobs in progress.
+# See https://github.com/googleapis/google-cloud-python/issues/6301
+DEFAULT_RETRY_FOR_ASYNC_JOBS = Retry(
+            # The predicate takes an exception and returns whether it is transient.
+            predicate=lambda exc: (polling.DEFAULT_RETRY._predicate(exc) or
+                                   _transient_string_in_exception_message(exc)),
+    deadline=DEFAULT_TIMEOUT_SEC)
 
 
 class BigqueryBaseClient(object):
@@ -618,7 +649,7 @@ def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    if job.done():
+    if job.done(retry=DEFAULT_RETRY_FOR_API_CALLS):
         if query:
             validate_query_job(job, query)
         return True
@@ -636,7 +667,7 @@ def validate_query_job(query_job, query):
     Raises:
         RuntimeError: If the job finished and returned an error result.
     """
-    if query_job.done() and query_job.error_result:
+    if query_job.done(retry=DEFAULT_RETRY_FOR_API_CALLS) and query_job.error_result:
         if query_job.error_result['reason'] in VALIDATION_ERROR_REASONS:  # validation error
             msg = str(query_job.errors)
             # This craziness puts line numbers next to the SQL.
