@@ -468,7 +468,7 @@ class Client(BigqueryBaseClient):
                 try:
                     job.result()
                 except BadRequest as e:
-                    raise BadRequest('{} Error stream: {}'.format(str(e), job.error_result))
+                    raise BadRequest('{} Errors: {}'.format(str(e), job.errors))
                 job.result()
 
                 output.close()
