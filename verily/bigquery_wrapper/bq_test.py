@@ -27,10 +27,37 @@ from ddt import data, ddt, unpack
 from google.api_core import exceptions, retry
 from google.cloud import storage
 from google.cloud.bigquery import ExtractJob
+from google.cloud.bigquery.job import QueryJobConfig
 from google.cloud.bigquery.schema import SchemaField
 from mock import MagicMock, PropertyMock, patch
 
 from verily.bigquery_wrapper import bq, bq_shared_tests, bq_test_case
+from verily.bigquery_wrapper.bq_base import is_job_done, validate_query_job
+
+# Arguments to pass to retry-related tests
+EXCEPTION_RETRY_TEST_ARGS = (
+    dict(
+        exc=exceptions.BadRequest('Extra comma before FROM clause.'),
+        should_retry=False
+    ),
+    dict(
+        exc=exceptions.BadRequest(
+            'The job encountered an internal error during execution. (Transient error.)'),
+        should_retry=True
+    ),
+    dict(
+        exc=exceptions.InternalServerError('Transient error.'),
+        should_retry=True
+    ),
+    dict(
+        exc=exceptions.TooManyRequests('Transient error.'),
+        should_retry=True
+    ),
+    dict(
+        exc=exceptions.BadGateway('Transient error.'),
+        should_retry=True
+    ),
+)
 
 
 @ddt
@@ -53,7 +80,6 @@ class BQTest(bq_shared_tests.BQSharedTests):
     @classmethod
     def setUpClass(cls):
         # type: () -> None
-        """Set up class"""
         # Because we're testing the actual Bigquery functionality we don't want the mocks.
         super(BQTest, cls).setUpClass(use_mocks=False)
         cls.create_temp_bucket()
@@ -61,9 +87,12 @@ class BQTest(bq_shared_tests.BQSharedTests):
     @classmethod
     def tearDownClass(cls):
         # type: () -> None
-        """Tear down class"""
         cls.bucket.delete()
         super(BQTest, cls).tearDownClass()
+
+    def setUp(self):
+        # type: () -> None
+        self.test_id = str(uuid.uuid4().hex)
 
     def tearDown(self):
         # type: () -> None
@@ -184,7 +213,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
 
         input_path = 'gs://{}/{}'.format(self.temp_bucket_name, input_path)
 
-        dest_path = self.client.path(str(uuid.uuid4().hex))
+        dest_path = self.client.path(self.test_id)
 
         self.client.import_table_from_bucket(dest_path,
                                              input_path,
@@ -204,7 +233,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
             csv_out.writerow(row)
         output.seek(0)
 
-        dest_path = self.client.path(str(uuid.uuid4().hex))
+        dest_path = self.client.path(self.test_id)
 
         self.client.import_table_from_file(dest_path,
                                            output,
@@ -256,31 +285,40 @@ class BQTest(bq_shared_tests.BQSharedTests):
             self.client.get_query_results(query)
         self.assertTrue(query in str(e.exception))
 
-    @data(
-        dict(
-            exc=exceptions.BadRequest('Extra comma before FROM clause.'),
-            should_retry=False
-        ),
-        dict(
-            exc=exceptions.BadRequest(
-                'The job encountered an internal error during execution. (Transient error.)'),
-            should_retry=True
-        ),
-        dict(
-            exc=exceptions.InternalServerError('Transient error.'),
-            should_retry=True
-        ),
-        dict(
-            exc=exceptions.TooManyRequests('Transient error.'),
-            should_retry=True
-        ),
-        dict(
-            exc=exceptions.BadGateway('Transient error.'),
-            should_retry=True
-        ),
-    )
+    def _get_mock_api_request_side_effect(self, exceptions_to_raise):
+        """Get the side effect function for mock API requests to the BQ backend.
+
+        In the tests, we mock out google.cloud._http.JSONConnection.api_request to raise exceptions
+        as specified so that we are able to test the retry behavior of our code.
+
+        Args:
+            exceptions_to_raise: The list of exceptions to raise. Mock BQ backend API requests' side
+                effect function iterates over the list. When the side effect function is called, it
+                checks the next element in the list. If it's None or past the end of the
+                exception sequence, no error is raised and return a normal api_request. If it's an
+                exception, raise the exception.
+
+        Returns:
+            The side effect function for mock API requests to the BQ backend
+        """
+        # Make a copy of the api_request function that is not mocked out.
+        copy_of_api_request = google.cloud._http.JSONConnection.api_request
+        exception_iter = iter(exceptions_to_raise)
+        def api_request_side_effect(*args, **kwargs):
+            try:
+                exception = next(exception_iter)
+                if exception is not None:
+                    raise exception
+            except StopIteration:
+                pass
+
+            return copy_of_api_request(self.client.gclient._connection, *args, **kwargs)
+
+        return api_request_side_effect
+
+    @data(*EXCEPTION_RETRY_TEST_ARGS)
     @unpack
-    def test_get_query_results_retries_on_transient_error(self, exc, should_retry):
+    def test_get_query_results_retries(self, exc, should_retry):
         # type: (Exception, bool) -> None
         """Tests that get_query_results retries on transient unstructured errors.
 
@@ -292,22 +330,11 @@ class BQTest(bq_shared_tests.BQSharedTests):
                 called all following times.
             should_retry: Whether get_query_results is expected to retry on the given exception.
         """
-        raised_exceptions = iter([exc, exc])
-        # Make a copy of the api_request function that is not mocked out.
-        copy_of_api_request = google.cloud._http.JSONConnection.api_request
+        exceptions_to_raise = [exc, exc]
+        side_effect_func = self._get_mock_api_request_side_effect(exceptions_to_raise)
+
         with patch('google.cloud._http.JSONConnection.api_request') as mock_api_request:
-            def api_request_side_effect(*args, **kwargs):
-                """The function to execute instead of api_request.
-
-                Raises the next exception in raised_exceptions every time this is called. When there
-                are no exceptions left in raised_exceptions, calls the real API.
-                """
-                try:
-                    raise next(raised_exceptions)
-                except StopIteration:
-                    return copy_of_api_request(self.client.gclient._connection, *args, **kwargs)
-
-            mock_api_request.side_effect = api_request_side_effect
+            mock_api_request.side_effect = side_effect_func
 
             if should_retry:
                 self.assertEqual(self.client.get_query_results('SELECT 5'), [(5,)])
@@ -338,7 +365,63 @@ class BQTest(bq_shared_tests.BQSharedTests):
         diff = datetime.now() - before_get_query_results
         self.assertTrue(diff.seconds < retry._DEFAULT_DEADLINE)
 
-    # TODO(Issue 23): Fill out remaining tests for retry logic.
+    def _test_bq_api_call_retries(self, method_to_test, exc, should_retry):
+        """A helper function to test retries when calling backend API.
+
+        Args:
+            method_to_test: The method to test. It is a method called after an AsyncJob is created
+                and takes an AsyncJob and a string of query as arguments.
+            exc: The exception to raise.
+            should_retry: Whether bq.Client should catch the exception and do a retry.
+        """
+        exceptions_to_raise = [
+            None,  # No error to raise when called in self.client.query
+            exc   # Method validate_query_job calls QueryJob.done, which raises an error.
+                  # If exc is transient, trigger a retry; otherwise exit.
+        ]
+        side_effect_func = self._get_mock_api_request_side_effect(exceptions_to_raise)
+
+        with patch('google.cloud._http.JSONConnection.api_request') as mock_api_request:
+            mock_api_request.side_effect = side_effect_func
+
+            config = QueryJobConfig()
+            config.allow_large_results = True
+
+            config.destination = self.client.get_table_reference_from_path(
+                self.client.path('{}_test_{}'.format(method_to_test.__name__, self.test_id)))
+
+            query_to_run = 'SELECT 5'
+            query_job = self.client.run_async_query(query_to_run, job_config=config)
+
+            if should_retry:
+                method_to_test(query_job, query_to_run)
+            else:
+                with self.assertRaises(type(exc)):
+                    method_to_test(query_job, query_to_run)
+
+    @data(*EXCEPTION_RETRY_TEST_ARGS)
+    @unpack
+    def test_is_job_done_retries(self, exc, should_retry):
+        """Tests retries in is_job_done
+
+        Args:
+            exc: The exception to raise.
+            should_retry: Whether bq.Client should catch the exception and do a retry.
+        """
+        self._test_bq_api_call_retries(is_job_done, exc, should_retry)
+
+    @data(*EXCEPTION_RETRY_TEST_ARGS)
+    @unpack
+    def test_validate_query_job_retries(self, exc, should_retry):
+        """Tests retries in validate_query_job
+
+        Args:
+            exc: The exception to raise.
+            should_retry: Whether bq.Client should catch the exception and do a retry.
+        """
+        self._test_bq_api_call_retries(validate_query_job, exc, should_retry)
+
+  # TODO(Issue 23): Fill out remaining tests for retry logic.
 
 
 if __name__ == '__main__':

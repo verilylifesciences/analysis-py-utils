@@ -30,24 +30,20 @@ import os
 import time
 from collections import OrderedDict
 
-from google.api_core.future import polling
 from google.cloud.exceptions import BadRequest
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
 
 from google.api_core.exceptions import NotFound
-from google.api_core.retry import Retry
 from google.cloud import bigquery, storage
 from google.cloud.bigquery.dataset import Dataset, DatasetReference
 from google.cloud.bigquery.job import ExtractJobConfig, LoadJobConfig, QueryJobConfig
-from google.cloud.bigquery import retry as bq_retry
 from google.cloud.bigquery.schema import SchemaField
 from google.cloud.bigquery.table import Table, TableReference
 from verily.bigquery_wrapper.bq_base import (MAX_TABLES, BigqueryBaseClient, BQ_PATH_DELIMITER,
-                                             validate_query_job)
-
-# This is the default timeout for any BigQuery operations executed in this file, if no timeout is
-# specified in the constructor.
-DEFAULT_TIMEOUT_SEC = 1200
+                                             validate_query_job, DEFAULT_TIMEOUT_SEC,
+                                             DEFAULT_RETRY_FOR_API_CALLS,
+                                             _transient_string_in_exception_message,
+                                             DEFAULT_RETRY_FOR_ASYNC_JOBS)
 
 # Bigquery has a limit of max 10000 rows to insert per request
 MAX_ROWS_TO_INSERT = 10000
@@ -55,17 +51,6 @@ MAX_ROWS_TO_INSERT = 10000
 # When exporting data to multiple files, BQ pads the shard number to 12 digits. See:
 # https://cloud.google.com/bigquery/docs/exporting-data#exporting_data_into_one_or_more_files
 MULTIFILE_EXPORT_PAD_LENGTH = 12
-
-
-def _transient_string_in_exception_message(exc):
-    # type: (Exception) -> bool
-    """Determines whether an exception's message contains a common message for transient errors.
-
-    The exception's message containing one of these substrings is sufficient to determine that it is
-    transient, but there can be transient exceptions whose messages do not contain these substrings.
-    """
-    return ('The job encountered an internal error during execution' in str(exc) or
-            'Retrying the job may solve the problem' in str(exc))
 
 
 class Client(BigqueryBaseClient):
@@ -86,18 +71,11 @@ class Client(BigqueryBaseClient):
         self.gclient = (alternate_bq_client_class or bigquery.Client)(project=project_id)
         self.max_wait_secs = max_wait_secs
         # Retry object for errors encountered in making API calls (executing jobs, etc.)
-        self.default_retry_for_api_calls = Retry(
-            # The predicate takes an exception and returns whether it is transient.
-            predicate=lambda exc: (bq_retry.DEFAULT_RETRY._predicate(exc) or
-                                   _transient_string_in_exception_message(exc)),
-            deadline=max_wait_secs)
+        self.default_retry_for_api_calls = DEFAULT_RETRY_FOR_API_CALLS.with_deadline(max_wait_secs)
         # Retry object for errors encountered while polling jobs in progress.
         # See https://github.com/googleapis/google-cloud-python/issues/6301
-        self.default_retry_for_async_jobs = Retry(
-            # The predicate takes an exception and returns whether it is transient.
-            predicate=lambda exc: (polling.DEFAULT_RETRY._predicate(exc) or
-                                   _transient_string_in_exception_message(exc)),
-            deadline=max_wait_secs)
+        self.default_retry_for_async_jobs = DEFAULT_RETRY_FOR_ASYNC_JOBS.with_deadline(
+            max_wait_secs)
         super(Client, self).__init__(project_id, default_dataset, maximum_billing_tier)
 
     def get_delimiter(self):
@@ -148,11 +126,7 @@ class Client(BigqueryBaseClient):
 
         config.use_legacy_sql = use_legacy_sql
 
-        query_job = self.gclient.query(query, job_config=config,
-                                       retry=self.default_retry_for_api_calls)
-        # The above retry is for errors encountered in executing the jobs. The below retry is
-        # for errors encountered in polling to see whether the job is done.
-        query_job._retry = self.default_retry_for_async_jobs
+        query_job = self.run_async_query(query, job_config=config)
 
         rows = self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
@@ -212,11 +186,7 @@ class Client(BigqueryBaseClient):
 
         config.destination = self.get_table_reference_from_path(table_path)
 
-        query_job = self.gclient.query(query, job_config=config,
-                                       retry=self.default_retry_for_api_calls)
-        # The above retry is for errors encountered in executing the jobs. The below retry is
-        # for errors encountered in polling to see whether the job is done.
-        query_job._retry = self.default_retry_for_async_jobs
+        query_job = self.run_async_query(query, job_config=config)
 
         return self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
@@ -953,3 +923,25 @@ class Client(BigqueryBaseClient):
             List of tuples, where each tuple is a row of the table.
         """
         return self.get_query_results('SELECT * FROM `{}`'.format(table.table_id))
+
+    def run_async_query(self, query, job_config):
+        # type: (str, QueryJobConfig) -> QueryJob
+        """Run an asynchronous query with a given job config.
+
+        This is a wrapper of google.cloud.bigquery.Client.query. It adds retry for polling after
+        a QueryJob is created.
+
+        Args:
+            query: The query to run
+            job_config: A QueryJobConfig for the job
+
+        Returns:
+            A QueryJob instance for the job to run the query
+        """
+        query_job = self.gclient.query(query, job_config=job_config,
+                                       retry=self.default_retry_for_api_calls)
+        # The above retry is for errors encountered in executing the jobs. The below retry is
+        # for errors encountered in polling to see whether the job is done.
+        query_job._retry = self.default_retry_for_async_jobs
+
+        return query_job
