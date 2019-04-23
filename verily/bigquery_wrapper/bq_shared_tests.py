@@ -35,10 +35,11 @@ FOO_BAR_BAZ_INTEGERS_SCHEMA = [SchemaField('foo', 'INTEGER'),
 @ddt
 class BQSharedTests(bq_test_case.BQTestCase):
     @classmethod
-    def setUpClass(cls, use_mocks=False):
+    def setUpClass(cls, use_mocks=False, alternate_bq_client_class=None):
         # type: () -> None
         """Set up class"""
-        super(BQSharedTests, cls).setUpClass(use_mocks=use_mocks)
+        super(BQSharedTests, cls).setUpClass(use_mocks=use_mocks,
+                                             alternate_bq_client_class=alternate_bq_client_class)
         cls.longMessage = True
 
     @classmethod
