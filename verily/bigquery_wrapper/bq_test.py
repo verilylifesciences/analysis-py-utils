@@ -16,12 +16,12 @@
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
-import cStringIO
 import csv
 import random
 import uuid
 from datetime import datetime
-
+import six
+from six.moves import cStringIO
 import google
 from ddt import data, ddt, unpack
 from google.api_core import exceptions, retry
@@ -222,11 +222,11 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                              skip_leading_row=skip_leading_row)
 
         results = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_path))
-        self.assertItemsEqual([(1, 2, 3), (4, 5, 6)], results)
+        six.assertCountEqual(self, [(1, 2, 3), (4, 5, 6)], results)
 
     def test_import_table_from_file(self):
         data = [(8, 9, 10), (11, 12, 13)]
-        output = cStringIO.StringIO()
+        output = cStringIO()
 
         csv_out = csv.writer(output)
         for row in data:
@@ -241,7 +241,7 @@ class BQTest(bq_shared_tests.BQSharedTests):
                                            schema=bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA)
 
         results = self.client.get_query_results('SELECT * FROM `{}`'.format(dest_path))
-        self.assertItemsEqual(data, results)
+        six.assertCountEqual(self, data, results)
 
     # TODO(Issue 7): Add test to export schemas from a project different from self.client.project_id
     @data(('', '', None, 'tmp-schema.json', 'Export schema to root'),

@@ -22,13 +22,14 @@ Sample usage:
 # Workaround for https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2366
 from __future__ import absolute_import
 
-import cStringIO
 import csv
 import json
 import logging
 import os
 import time
 from collections import OrderedDict
+import six
+from six.moves import cStringIO
 
 from google.cloud.exceptions import BadRequest
 from typing import Any, Dict, List, Optional, Tuple, Union  # noqa: F401
@@ -219,7 +220,7 @@ class Client(BigqueryBaseClient):
         if not replace_existing_tables:
             self._raise_if_tables_exist(table_names_to_schemas.keys(), dataset_id)
 
-        for name, schema in table_names_to_schemas.iteritems():
+        for name, schema in six.iteritems(table_names_to_schemas):
             table_ref = TableReference(dataset_ref, name)
             # Use the Table object so it retains its schema.
             table = bigquery.Table(table_ref, schema=schema)
@@ -422,7 +423,7 @@ class Client(BigqueryBaseClient):
 
         if data:
             if make_immediately_available:
-                output = cStringIO.StringIO()
+                output = cStringIO()
 
                 csv_out = csv.writer(output)
                 for row in data:

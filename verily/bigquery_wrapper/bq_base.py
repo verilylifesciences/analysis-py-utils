@@ -675,10 +675,10 @@ def validate_query_job(query_job, query):
             longest = max(len(l) for l in lines)
             # Print out a 'ruler' above and below the SQL so we can judge columns.
             ruler = ' ' * 4 + '|'  # Left pad for the line numbers (4 digits plus ':')
-            for _ in range(longest / 10):
+            for _ in range(longest // 10):
                 ruler += ' ' * 4 + '.' + ' ' * 4 + '|'
             header = '-----Offending Sql Follows-----'
-            padding = ' ' * ((longest - len(header)) / 2)
+            padding = ' ' * ((longest - len(header)) // 2)
             msg += '\n\n{}{}\n\n{}\n{}\n{}'.format(padding, header, ruler, '\n'.join(
                 '{:4}:{}'.format(n + 1, line) for n, line in enumerate(lines)), ruler)
             raise RuntimeError(msg)

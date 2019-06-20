@@ -13,6 +13,7 @@
 # limitations under the License.
 """Package configuration."""
 
+import platform
 from setuptools import find_packages
 from setuptools import setup
 
@@ -21,9 +22,12 @@ REQUIRED_PACKAGES = ['pandas',
                      'google-auth==1.4.1',
                      'google-cloud-bigquery==1.8.0',
                      'google-cloud-storage==1.13.1',
-                     'pysqlite>=2.8.3',
                      'ddt',
+                     'mock',
+                     'six',
                      'typing']
+if platform.sys.version_info.major == 2:
+    REQUIRED_PACKAGES.append('pysqlite>=2.8.3')
 
 setup(
     name='analysis-py-utils',
@@ -35,5 +39,5 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     description='Python utilities for data analysis.',
-    scripts=['setup_pysqlite.sh'],
+    scripts=['setup_pysqlite.sh'] if platform.sys.version_info.major == 2 else [],
     requires=[])

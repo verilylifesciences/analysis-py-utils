@@ -18,24 +18,32 @@ set -o nounset
 set -o errexit
 set -o xtrace
 
-virtualenv --system-site-packages virtualTestEnv
-# Work around virtual env error 'PS1: unbound variable'
-set +o nounset
-source virtualTestEnv/bin/activate
-set -o nounset
+for version in 2 3; do
 
-pip install --upgrade pip
-pip install --upgrade setuptools
-pip install .
+  virtualenv --system-site-packages -p python$version virtualTestEnv
+  # Work around virtual env error 'PS1: unbound variable'
+  set +o nounset
+  source virtualTestEnv/bin/activate
+  set -o nounset
 
-# Check the version of sqlite3 installed.
-python -c "from pysqlite2 import dbapi2 as sqlite3; print(sqlite3.sqlite_version)"
+  pip$version install --upgrade pip
+  pip$version install --upgrade setuptools
+  pip$version install .
 
-if [[ -v GOOGLE_APPLICATION_CREDENTIALS ]] && [[ -v TEST_PROJECT ]];
-then python -m verily.bigquery_wrapper.bq_test
-else echo "Skipping Bigquery tests. To run, set GOOGLE_APPLICATION_CREDENTIALS and TEST_PROJECT"
-fi
+  # Check the version of sqlite3 installed.
+  if [ "$version" = "2" ]; then
+    python$version -c "from pysqlite2 import dbapi2 as sqlite3; print(sqlite3.sqlite_version)"
+  else
+    python$version -c "import sqlite3; print(sqlite3.sqlite_version)"
+  fi
 
-python -m verily.bigquery_wrapper.mock_bq_test
-python -m verily.query_kit.template_test
-python -m verily.query_kit.features_test
+
+  if [[ -v GOOGLE_APPLICATION_CREDENTIALS ]] && [[ -v TEST_PROJECT ]];
+  then python$version -m verily.bigquery_wrapper.bq_test
+  else echo "Skipping Bigquery tests. To run, set GOOGLE_APPLICATION_CREDENTIALS and TEST_PROJECT"
+  fi
+
+  python$version -m verily.bigquery_wrapper.mock_bq_test
+  python$version -m verily.query_kit.template_test
+  python$version -m verily.query_kit.features_test
+done

@@ -44,6 +44,7 @@ to aggregate().
 """
 
 import uuid
+import six
 
 
 class BoolCondition(object):
@@ -205,15 +206,15 @@ def aggregate(graph, result_name, source_placeholder, column_list, where=None):
         query.
   """
   group_by = [name for name in column_list
-              if isinstance(name, basestring)]
+              if isinstance(name, six.string_types)]
   group_selects = [(name, name) for name in group_by]
   reducers = [reducer for reducer in column_list
-              if not isinstance(reducer, basestring)]
+              if not isinstance(reducer, six.string_types)]
   intermediate_name = '{}_{}'.format(result_name, uuid.uuid4())
   select(graph, intermediate_name, source_placeholder,
          group_selects + [reducer.map(group_by) for reducer in reducers],
          where=where)
   select(graph, result_name, intermediate_name,
-         [(column, column) if isinstance(column, basestring)
+         [(column, column) if isinstance(column, six.string_types)
           else column.reduce() for column in column_list],
          group_by=group_by, where=where)

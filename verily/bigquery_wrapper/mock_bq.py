@@ -24,10 +24,15 @@ from __future__ import absolute_import
 
 import datetime
 import logging
+import platform
 import re
+import six
 
 from google.cloud.bigquery.schema import SchemaField
-from pysqlite2 import dbapi2 as sqlite3
+if platform.sys.version_info.major == 2:
+    from pysqlite2 import dbapi2 as sqlite3
+else:
+    import sqlite3
 from verily.bigquery_wrapper.bq_base import (BQ_PATH_DELIMITER,
                                              BigqueryBaseClient)
 
@@ -249,7 +254,7 @@ class Client(BigqueryBaseClient):
         query = query.replace('`', '')
 
         # For all known tables, replace the BigQuery formatted path with the SQLite3 formatted path
-        for project, dataset_list in self.project_map.iteritems():
+        for project, dataset_list in six.iteritems(self.project_map):
             for dataset in dataset_list:
                 for table in self.table_map[dataset]:
                     qualified_table = self.path(table, dataset, project,
@@ -581,7 +586,7 @@ class Client(BigqueryBaseClient):
         if not replace_existing_tables:
             self._raise_if_tables_exist(table_names_to_schemas.keys(), dataset_id)
 
-        for table_name, schema in table_names_to_schemas.iteritems():
+        for table_name, schema in six.iteritems(table_names_to_schemas):
             table_path = self.path(table_name, dataset_id=dataset_id, project_id=self.project_id,
                                    delimiter=MOCK_DELIMITER)
 
