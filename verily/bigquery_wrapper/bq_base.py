@@ -636,7 +636,8 @@ class BigqueryBaseClient(object):
 
 
 def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
-                query=""  # type: Optional[str]
+                query="",  # type: Optional[str]
+                max_wait_secs=None  # type: int
                 ):
     # type: (...) -> bool
     """Returns True only if the query job passed in is finished.
@@ -644,12 +645,18 @@ def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
     Args:
         job: A gcloud.QueryJob.
         query: Optionally, the query this job is executing.
+        max_wait_secs: The number of seconds to wait for the job to finish before raising an error.
+            If None, uses the default timeout.
     Returns:
         True if the job is in state DONE, False otherwise.
     Raises:
         RuntimeError: If the job finished and returned an error result.
+        google.api_core.exceptions.RetryError: If the job did not finish in the designated timeout.
     """
-    if job.done(retry=DEFAULT_RETRY_FOR_API_CALLS):
+    retry = DEFAULT_RETRY_FOR_API_CALLS
+    if max_wait_secs:
+        retry = retry.with_deadline(max_wait_secs)
+    if job.done(retry=retry):
         if query:
             validate_query_job(job, query)
         return True

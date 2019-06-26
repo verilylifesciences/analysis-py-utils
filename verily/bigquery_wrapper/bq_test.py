@@ -32,7 +32,8 @@ from google.cloud.bigquery.schema import SchemaField
 from mock import MagicMock, PropertyMock, patch
 
 from verily.bigquery_wrapper import bq, bq_shared_tests, bq_test_case
-from verily.bigquery_wrapper.bq_base import is_job_done, validate_query_job
+from verily.bigquery_wrapper.bq_base import (DEFAULT_RETRY_FOR_API_CALLS, is_job_done,
+                                             validate_query_job)
 
 # Arguments to pass to retry-related tests
 EXCEPTION_RETRY_TEST_ARGS = (
@@ -420,6 +421,28 @@ class BQTest(bq_shared_tests.BQSharedTests):
             should_retry: Whether bq.Client should catch the exception and do a retry.
         """
         self._test_bq_api_call_retries(validate_query_job, exc, should_retry)
+
+    @data(
+        dict(
+            max_wait_secs=12,
+            expected_timeout=12
+        ),
+        dict(
+            max_wait_secs=None,
+            expected_timeout=DEFAULT_RETRY_FOR_API_CALLS._deadline
+        )
+    )
+    @unpack
+    def test_is_job_done_timeouts(self, max_wait_secs, expected_timeout):
+        """Tests that timeouts are plumbed through to the done method in is_job_done."""
+        mock_job = MagicMock()
+        mock_job.done.return_value = False
+
+        is_job_done(mock_job, max_wait_secs=max_wait_secs)
+
+        done_call_args, done_call_kwargs = mock_job.done.call_args
+        retry_object_used = done_call_kwargs['retry']
+        self.assertEqual(retry_object_used._deadline, expected_timeout)
 
   # TODO(Issue 23): Fill out remaining tests for retry logic.
 
