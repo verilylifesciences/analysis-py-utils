@@ -275,6 +275,31 @@ class Client(BigqueryBaseClient):
 
         self.delete_table(self.get_table_reference_from_path(table_path))
 
+    def dataset_exists_with_name(self, dataset_name):
+        # type: (str) -> bool
+        """Determines whether a dataset exists with the given name.
+
+        Args:
+            dataset_name: The name of the dataset to check.
+
+        Returns:
+            True if the dataset exists in this client's project, False otherwise.
+        """
+        return self.dataset_exists(DatasetReference(self.project_id, dataset_name))
+
+    def table_exists_with_name(self, table_path):
+        # type: (str) -> bool
+        """Determines whether a table exists at the given table path.
+
+        Args:
+            table_path: The table path of the table to check. Uses the default dataset ID if a
+                dataset is not specified as part of the table path.
+
+        Returns:
+            True if the table exists at the given path, False otherwise.
+        """
+        return self.table_exists(self.get_table_reference_from_path(table_path))
+
     def tables(self, dataset_id):
         # type: (str) -> List[str]
         """Returns a list of table names in a given dataset.

@@ -190,6 +190,30 @@ class BQSharedTests(bq_test_case.BQTestCase):
                          [(x.name, x.field_type, x.mode)
                           for x in self.client.get_schema(self.default_test_dataset_id, 'empty_3')])
 
+    def test_dataset_exists_with_name(self):
+        dataset_that_exists = 'dataset_{}'.format(self.make_n_digit_random_number(6))
+        self.client.create_dataset_by_name(dataset_that_exists)
+        self.addCleanup(lambda: self.client.delete_dataset_by_name(dataset_that_exists))
+
+        self.assertTrue(self.client.dataset_exists_with_name(dataset_that_exists))
+        self.assertFalse(self.client.dataset_exists_with_name('dataset_that_does_not_exist'))
+
+    def test_table_exists_with_name(self):
+        dataset_that_exists = 'dataset_{}'.format(self.make_n_digit_random_number(6))
+        table_that_exists = 'table_{}'.format(self.make_n_digit_random_number(6))
+        table_path_that_exists = self.client.path(table_that_exists, dataset_that_exists)
+        self.client.create_dataset_by_name(dataset_that_exists)
+        self.addCleanup(lambda: self.client.delete_dataset_by_name(dataset_that_exists,
+                                                                   delete_all_tables=True))
+        self.client.create_tables_from_dict({table_that_exists: [SchemaField('col', 'INT64')]},
+                                            dataset_that_exists)
+
+        self.assertTrue(self.client.table_exists_with_name(table_path_that_exists))
+        self.assertFalse(self.client.table_exists_with_name(
+            self.client.path(table_that_exists, 'dataset_that_does_not_exist')))
+        self.assertFalse(self.client.table_exists_with_name(
+            self.client.path('table_that_does_not_exist', dataset_that_exists)))
+
     @data((True,), (False,))
     @unpack
     def test_populate_both_insert_methods(self, make_immediately_available):
@@ -383,7 +407,6 @@ class BQSharedTests(bq_test_case.BQTestCase):
         row_data = [[1, 2], [3, 4], [5, 6]]
         self.populate_sparse_table(table_name, table_schema, col_subset, row_data)
         self.expect_table_contains(table_name, [(1, None, 2), (3, None, 4), (5, None, 6)])
-
 
 def main():
     bq_test_case.main()
