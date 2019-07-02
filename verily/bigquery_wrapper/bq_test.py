@@ -444,6 +444,67 @@ class BQTest(bq_shared_tests.BQSharedTests):
         retry_object_used = done_call_kwargs['retry']
         self.assertEqual(retry_object_used._deadline, expected_timeout)
 
+    @data(
+        dict(
+            table_content=[],
+            expected=0
+        ),
+        dict(
+            table_content=[[1, 2, 3], [4, 5, 6]],
+            expected=2
+        )
+    )
+    @unpack
+    def test_get_table_num_rows(self, table_content, expected):
+        # type: (List[List[int]], int) -> None
+        """Tests get_table_num_rows
+
+        Args:
+            table_content: Content of the table to test. It is expected to have three integer
+                columns, so that we can reuse bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA.
+            expected: Expected number of rows in the test table
+        """
+
+        test_table_path = self.client.path('tmp_' + self.test_id)
+
+        self.client.populate_table(
+            test_table_path,
+            bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA,
+            table_content)
+
+        self.assertEqual(self.client.get_table_num_rows(test_table_path), expected)
+
+    @data(
+        dict(
+            table_content=[],
+            expected=0
+        ),
+        dict(
+            table_content=[[1, 2, 3], [4, 5, 6]],
+            expected=48
+        )
+    )
+    @unpack
+    def test_get_table_num_bytes(self, table_content, expected):
+        # type: (List[List[int]], int) -> None
+        """Tests get_table_num_bytes
+
+        Args:
+            table_content: Content of the table to test. It is expected to have three integer
+                columns, so that we can reuse bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA.
+            expected: Expected number of bytes in the test table
+        """
+
+        test_table_path = self.client.path('tmp_' + self.test_id)
+
+        self.client.populate_table(
+            test_table_path,
+            bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA,
+            table_content)
+
+        self.assertEqual(self.client.get_table_num_bytes(test_table_path), expected)
+
+
   # TODO(Issue 23): Fill out remaining tests for retry logic.
 
 

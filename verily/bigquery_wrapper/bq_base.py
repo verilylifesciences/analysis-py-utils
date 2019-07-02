@@ -659,6 +659,30 @@ class BigqueryBaseClient(object):
                                'the dataset {}.',
                                ','.join(intersect), dataset_id or self.default_dataset_id)
 
+    def get_table_num_rows(self, table_path):
+        # type: (str) -> int
+        """Get the number of rows in the given table.
+
+        Args:
+            table_path: Full path of the table
+
+        Returns:
+            Number of the rows in the given table.
+        """
+        raise NotImplementedError('get_table_num_rows is not implemented')
+
+    def get_table_num_bytes(self, table_path):
+        # type: (str) -> int
+        """Get the number of bytes in the given table.
+
+        Args:
+            table_path: Full path of the table
+
+        Returns:
+            Number of the bytes in the given table.
+        """
+        raise NotImplementedError('get_table_num_bytes is not implemented')
+
 
 def is_job_done(job,  # type: google.cloud.bigquery.job.QueryJob
                 query="",  # type: Optional[str]

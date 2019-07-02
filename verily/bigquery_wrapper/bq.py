@@ -971,3 +971,40 @@ class Client(BigqueryBaseClient):
         query_job._retry = self.default_retry_for_async_jobs
 
         return query_job
+
+
+    def _get_table_from_path(self, table_path):
+        # type: (str) -> bigquery.table.Table
+        """Get a bigquery Table instance for the given table path.
+
+        Args:
+            table_path: Full path of the table
+
+        Returns:
+            The bigquery Table instance for the given table path.
+        """
+        return self.gclient.get_table(self.get_table_reference_from_path(table_path))
+
+    def get_table_num_rows(self, table_path):
+        # type: (str) -> int
+        """Get the number of rows in the given table.
+
+        Args:
+            table_path: Full path of the table
+
+        Returns:
+            Number of the rows in the given table.
+        """
+        return self._get_table_from_path(table_path).num_rows
+
+    def get_table_num_bytes(self, table_path):
+        # type: (str) -> int
+        """Get the number of bytes in the given table.
+
+        Args:
+            table_path: Full path of the table
+
+        Returns:
+            Number of the bytes in the given table.
+        """
+        return self._get_table_from_path(table_path).num_bytes
