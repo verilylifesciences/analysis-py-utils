@@ -504,8 +504,67 @@ class BQTest(bq_shared_tests.BQSharedTests):
 
         self.assertEqual(self.client.get_table_num_bytes(test_table_path), expected)
 
+    @data((True,), (False,))
+    @unpack
+    def test_copy_dataset(self, create_destination_dataset):
+        # type: (bool) -> None
+        """Tests copy_dataset.
 
-  # TODO(Issue 23): Fill out remaining tests for retry logic.
+        This does not test the functionality of copying a dataset from one project to another, since
+        we only have access to one project (self.TEST_PROJECT). It just tests that the dataset is
+        copied to the desired destination in the same project.
+
+        Args:
+            create_destination_dataset: Whether to create the destination dataset (empty of tables)
+                before calling copy_dataset. It should work either way.
+        """
+        source_dataset_name = 'source_dataset_{}'.format(self.test_id)
+        destination_dataset_name = 'destination_dataset_{}'.format(self.test_id)
+        self.client.create_dataset_by_name(source_dataset_name)
+        self.addCleanup(lambda: self.client.delete_dataset_by_name(source_dataset_name,
+                                                                   delete_all_tables=True))
+        if create_destination_dataset:
+            self.client.create_dataset_by_name(destination_dataset_name)
+        self.addCleanup(lambda: self.client.delete_dataset_by_name(destination_dataset_name,
+                                                                   delete_all_tables=True))
+
+        table_names = ['table_1', 'table_2']
+        for table_name in table_names:
+            table_path = self.client.path(table_name, dataset_id=source_dataset_name)
+            # Create an empty table.
+            self.client.populate_table(
+                table_path,
+                bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA)
+
+        bq.copy_dataset(self.TEST_PROJECT, source_dataset_name, self.TEST_PROJECT,
+                     destination_dataset_name)
+
+        self.assertEqual(self.client.tables(destination_dataset_name), table_names)
+
+    def test_copy_dataset_fails_if_tables_in_destination_dataset(self):
+        # type: (bool) -> None
+        """Tests that copy_dataset fails if there are already tables in the destination dataset."""
+        source_dataset_name = 'source_dataset_{}'.format(self.test_id)
+        destination_dataset_name = 'destination_dataset_{}'.format(self.test_id)
+        self.client.create_dataset_by_name(source_dataset_name)
+        self.addCleanup(lambda: self.client.delete_dataset_by_name(source_dataset_name,
+                                                                   delete_all_tables=True))
+        self.client.create_dataset_by_name(destination_dataset_name)
+        self.addCleanup(lambda: self.client.delete_dataset_by_name(destination_dataset_name,
+                                                                   delete_all_tables=True))
+
+        self.client.populate_table(
+            self.client.path('table_to_copy', dataset_id=source_dataset_name),
+            bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA)
+        self.client.populate_table(
+            self.client.path('existing_table', dataset_id=destination_dataset_name),
+            bq_shared_tests.FOO_BAR_BAZ_INTEGERS_SCHEMA)
+
+        with self.assertRaises(RuntimeError):
+            bq.copy_dataset(self.TEST_PROJECT, source_dataset_name, self.TEST_PROJECT,
+                         destination_dataset_name)
+
+    # TODO(Issue 23): Fill out remaining tests for retry logic.
 
 
 if __name__ == '__main__':

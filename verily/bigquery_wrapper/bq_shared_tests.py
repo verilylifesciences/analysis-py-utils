@@ -408,5 +408,6 @@ class BQSharedTests(bq_test_case.BQTestCase):
         self.populate_sparse_table(table_name, table_schema, col_subset, row_data)
         self.expect_table_contains(table_name, [(1, None, 2), (3, None, 4), (5, None, 6)])
 
+
 def main():
     bq_test_case.main()

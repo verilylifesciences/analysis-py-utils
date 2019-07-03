@@ -29,6 +29,7 @@ import os
 import time
 from collections import OrderedDict
 import six
+import subprocess
 from six.moves import cStringIO
 
 from google.cloud.exceptions import BadRequest
@@ -1008,3 +1009,47 @@ class Client(BigqueryBaseClient):
             Number of the bytes in the given table.
         """
         return self._get_table_from_path(table_path).num_bytes
+
+
+def copy_dataset(source_project, source_dataset_name, destination_project,
+                 destination_dataset_name):
+    # type: (str, str, str, str) -> None
+    """Copies a dataset and all its tables to a different location.
+
+    If the destination dataset does not yet exist, creates it.
+
+    This function uses subprocess to copy tables from one project to another, because the python API
+    does not support any functions that work across different GCP projects.
+
+    Args:
+        source_project: The project containing the dataset to copy.
+        source_dataset_name: The name of the dataset to copy.
+        destination_project: The project to which to copy the dataset.
+        destination_dataset_name: The name of the dataset to copy to.
+
+    Raises:
+        RuntimeError if the destination dataset already exists and contains any tables.
+    """
+    source_client = Client(source_project)
+    destination_client = Client(destination_project)
+    source_tables = source_client.tables(source_dataset_name)
+    if destination_client.dataset_exists_with_name(destination_dataset_name):
+        destination_tables = destination_client.tables(destination_dataset_name)
+        if destination_tables:
+            raise RuntimeError(
+                'Cannot copy a dataset into a dataset that already contains tables. Destination '
+                'dataset: {}. Found tables: {}'.format(destination_dataset_name, destination_tables)
+            )
+    else:
+        destination_client.create_dataset_by_name(destination_dataset_name)
+
+    for table_name in source_tables:
+        # If this is the first time using BQ on this machine, bq cp will prompt for a default
+        # project. Arbitrarily pick the first option by piping "1" to it. (It doesn't matter which
+        # project is the default, since the project names are specified in the command.)
+        echo_1_process = subprocess.Popen(['echo', '1'], stdout=subprocess.PIPE)
+        subprocess.check_output(
+            ['bq', 'cp', '{}:{}.{}'.format(source_project, source_dataset_name, table_name),
+             '{}:{}.{}'.format(destination_project, destination_dataset_name, table_name)],
+            stdin=echo_1_process.stdout
+        )
