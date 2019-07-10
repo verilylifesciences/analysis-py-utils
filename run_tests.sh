@@ -46,4 +46,6 @@ for version in 2 3; do
   python$version -m verily.bigquery_wrapper.mock_bq_test
   python$version -m verily.query_kit.template_test
   python$version -m verily.query_kit.features_test
+
+  deactivate
 done
