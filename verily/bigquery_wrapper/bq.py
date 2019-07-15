@@ -1044,12 +1044,16 @@ def copy_dataset(source_project, source_dataset_name, destination_project,
         destination_client.create_dataset_by_name(destination_dataset_name)
 
     for table_name in source_tables:
-        # If this is the first time using BQ on this machine, bq cp will prompt for a default
-        # project. Arbitrarily pick the first option by piping "1" to it. (It doesn't matter which
-        # project is the default, since the project names are specified in the command.)
-        echo_1_process = subprocess.Popen(['echo', '1'], stdout=subprocess.PIPE)
-        subprocess.check_output(
-            ['bq', 'cp', '{}:{}.{}'.format(source_project, source_dataset_name, table_name),
-             '{}:{}.{}'.format(destination_project, destination_dataset_name, table_name)],
-            stdin=echo_1_process.stdout
-        )
+        try:
+            # If this is the first time using BQ on this machine, bq cp will prompt for a default
+            # project. Arbitrarily pick the first option by piping "1" to it. (It doesn't matter
+            # which project is the default, since the project names are specified in the command.)
+            echo_1_process = subprocess.Popen(['echo', '1'], stdout=subprocess.PIPE)
+            subprocess.check_output(
+                ['bq', 'cp', '{}:{}.{}'.format(source_project, source_dataset_name, table_name),
+                 '{}:{}.{}'.format(destination_project, destination_dataset_name, table_name)],
+                stdin=echo_1_process.stdout
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                "Command {} returned with error code {}: {}".format(e.cmd, e.returncode, e.output))
