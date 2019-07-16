@@ -1050,7 +1050,9 @@ def copy_dataset(source_project, source_dataset_name, destination_project,
             # which project is the default, since the project names are specified in the command.)
             echo_1_process = subprocess.Popen(['echo', '1'], stdout=subprocess.PIPE)
             subprocess.check_output(
-                ['bq', 'cp', '{}:{}.{}'.format(source_project, source_dataset_name, table_name),
+                # --project_id is needed, in case the default project is set to something else.
+                ['bq', 'cp', '--project_id', source_project,
+                 '{}:{}.{}'.format(source_project, source_dataset_name, table_name),
                  '{}:{}.{}'.format(destination_project, destination_dataset_name, table_name)],
                 stdin=echo_1_process.stdout
             )
