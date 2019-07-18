@@ -128,7 +128,7 @@ class Client(BigqueryBaseClient):
 
         config.use_legacy_sql = use_legacy_sql
 
-        query_job = self.run_async_query(query, job_config=config)
+        query_job = self._run_async_query(query, job_config=config)
 
         rows = self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
@@ -188,7 +188,7 @@ class Client(BigqueryBaseClient):
 
         config.destination = self.get_table_reference_from_path(table_path)
 
-        query_job = self.run_async_query(query, job_config=config)
+        query_job = self._run_async_query(query, job_config=config)
 
         return self._wait_for_job(query_job, query,
                                   max_wait_secs=max_wait_secs or self.max_wait_secs)
@@ -951,7 +951,7 @@ class Client(BigqueryBaseClient):
         """
         return self.get_query_results('SELECT * FROM `{}`'.format(table.table_id))
 
-    def run_async_query(self, query, job_config):
+    def _run_async_query(self, query, job_config):
         # type: (str, QueryJobConfig) -> QueryJob
         """Run an asynchronous query with a given job config.
 
@@ -973,6 +973,44 @@ class Client(BigqueryBaseClient):
 
         return query_job
 
+    def start_async_job(self, query, dest_path=None):
+        # type: (str, Optional[str]) -> QueryJob
+        """
+        Makes a QueryJob for the given query to be written to the dest_path, and starts it,
+        returning the job.
+
+        Args:
+            query: The query string to run.
+            dest_path: String of the path to the destination table. It's None if the query is a
+                Data Definition Language (DDL) statement (CREATE/ALTER/DELETE tables), because
+                destination table is already specified in a DDL query
+
+        Returns:
+            A QueryJob instance for the job
+
+        Raises:
+            ValueError. If dest_path is specified for a DDL query or dest_path is missing for a
+            non-DDL query.
+        """
+
+        is_ddl_query = any(query.strip().upper().startswith(ddl_op)
+                           for ddl_op in ['CREATE', 'ALTER', 'DROP'])
+
+        # Make an asynchronous job and start it.
+        config = QueryJobConfig()
+        if dest_path:
+            if is_ddl_query:
+                raise ValueError(
+                    'Cannot specify destination path for the DDL query below:\n ' + query)
+            # allow_large_results requires destination to be specified
+            config.allow_large_results = True
+            config.destination = (self.get_table_reference_from_path(dest_path))
+
+        elif not is_ddl_query:
+            raise ValueError('Destination table is not specified, '
+                             'But the query below is not a DDL statement:\n ' + query)
+
+        return self._run_async_query(query, config)
 
     def _get_table_from_path(self, table_path):
         # type: (str) -> bigquery.table.Table

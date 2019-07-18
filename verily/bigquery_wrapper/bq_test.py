@@ -385,20 +385,41 @@ class BQTest(bq_shared_tests.BQSharedTests):
         with patch('google.cloud._http.JSONConnection.api_request') as mock_api_request:
             mock_api_request.side_effect = side_effect_func
 
-            config = QueryJobConfig()
-            config.allow_large_results = True
-
-            config.destination = self.client.get_table_reference_from_path(
-                self.client.path('{}_test_{}'.format(method_to_test.__name__, self.test_id)))
+            dest_path = self.client.path('{}_test_{}'.format(method_to_test.__name__, self.test_id))
 
             query_to_run = 'SELECT 5'
-            query_job = self.client.run_async_query(query_to_run, job_config=config)
+            query_job = self.client.start_async_job(query_to_run, dest_path=dest_path)
 
             if should_retry:
                 method_to_test(query_job, query_to_run)
             else:
                 with self.assertRaises(type(exc)):
                     method_to_test(query_job, query_to_run)
+
+    @data(
+        dict(
+            test_description='DDL query, but dest_path is specifiedr',
+            query='CREATE TABLE test_dataset.test_table (dummy_col STRING)',
+            dest_path='test_dataset.test_table'
+        ),
+        dict(
+            test_description='Non-DDL query, but dest_path is not specified',
+            query='SELECT * FROM `test_dataset.test_table`',
+            dest_path=None
+        )
+    )
+    @unpack
+    def test_start_async_job_raises(self, test_description, query, dest_path):
+        # type: (str, str, Optional[str]) -> None
+        """Test whether SliceFamilyBase._start_async_job raises an error as expected.
+
+        Args:
+            test_description: A description of the test
+            query: The query to run
+            dest_path: Path to the destination table
+        """
+        with self.assertRaises(ValueError):
+            self.client.start_async_job(query, dest_path)
 
     @data(*EXCEPTION_RETRY_TEST_ARGS)
     @unpack
