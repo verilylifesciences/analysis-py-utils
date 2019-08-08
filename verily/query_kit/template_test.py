@@ -28,10 +28,22 @@ class TemplateTest(unittest.TestCase):
                      'SELECT * FROM `test-project.test-dataset.test-source`')
 
   def test_no_default_project(self):
-    test_graph = template.QueryGraph()
+    test_graph = template.QueryGraph(dataset='test-dataset')
     test_graph.add_query('simple_query', 'SELECT * FROM {source}')
     query = test_graph.compile('simple_query', {'source': 'test-source'})
     self.assertEqual(query, 'SELECT * FROM `test-source`')
+
+  def test_dotted_source(self):
+    test_graph = template.QueryGraph('test-project', 'test-dataset')
+    test_graph.add_query('simple_query', 'SELECT * FROM {source}')
+    query = test_graph.compile('simple_query', {'source': 'test-dataset.test-source'})
+    self.assertEqual(query, 'SELECT * FROM `test-dataset.test-source`')
+
+  def test_no_default_project_or_dataset(self):
+    test_graph = template.QueryGraph()
+    test_graph.add_query('simple_query', 'SELECT * FROM {source}')
+    query = test_graph.compile('simple_query', {'source': 'test-source'})
+    self.assertEqual(query, 'SELECT * FROM test-source')
 
   def test_graph_dependencies(self):
     test_graph = template.QueryGraph('test-project', 'test-dataset')
@@ -62,10 +74,16 @@ class TemplateTest(unittest.TestCase):
       query_graph.add_query('query3', 'SELECT * FROM {query1}')
 
   def test_escaped_brackets(self):
+    test_graph = template.QueryGraph('test-project', 'test-dataset')
+    test_graph.add_query('simple_query', '{{ text }} SELECT * FROM {source}')
+    query = test_graph.compile('simple_query', {'source': 'test-source'})
+    self.assertEqual(query, '{ text } SELECT * FROM `test-project.test-dataset.test-source`')
+
+  def test_escaped_brackets_no_bq(self):
     test_graph = template.QueryGraph()
     test_graph.add_query('simple_query', '{{ text }} SELECT * FROM {source}')
     query = test_graph.compile('simple_query', {'source': 'test-source'})
-    self.assertEqual(query, '{ text } SELECT * FROM `test-source`')
+    self.assertEqual(query, '{ text } SELECT * FROM test-source')
 
 
 if __name__ == '__main__':

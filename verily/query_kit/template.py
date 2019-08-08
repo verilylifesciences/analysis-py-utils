@@ -45,6 +45,9 @@ class GraphCompileError(Exception):
 class QueryGraph(object):
   """Encodes a graph of queries and their dependencies.
 
+  If neither a project or a dataset are provided, the queries are assumed not
+  to be for BigQuery.
+
   Args:
     project: The BigQuery project containing the source data.
     dataset: The BigQuery dataset.
@@ -124,15 +127,19 @@ class QueryGraph(object):
     if target not in self.query_templates.keys():
       raise GraphCompileError(
           'Query ' + target + ' is not defined.')
-    queries = {name: self._table_path(source_dictionary[name])
+    queries = {name: self._table_address(source_dictionary[name])
                for name in source_dictionary.keys()}
     self._add_compiled_query(target, queries)
     # Each query in the placeholder dictionary, queries, is surrounded by
     # parentheses which must be removed before the query is returned.
     return queries[target][1:-1]
 
-  def _table_path(self, table_name):
-    """Returns a formatted table path with the Graph's project and dataset.
+  def _table_address(self, table_name):
+    """Returns a formatted table address with the Graph's project and dataset.
+
+    If neither project nor dataset were provided on initialization, then the
+    function assumes the query is not for BigQuery, so table_name will be
+    returned verbatim, with no surrounding backticks.
 
     If the input table name contains one or more periods, the function assumes
     that it already has the project and dataset, and thus just adds angle
@@ -145,6 +152,8 @@ class QueryGraph(object):
     Returns:
       A string.
     """
+    if not self.project and not self.dataset:
+      return table_name
 
     if table_name.find('.') > -1 or not self.project:
       return '`' + table_name + '`'
