@@ -416,7 +416,7 @@ class Client(BigqueryBaseClient):
     @staticmethod
     def _transform_if(query):
         """Transform IF(COND,arg1,arg2) to CASE WHEN COND THEN arg1 ELSE arg2 END."""
-        extract_regex = re.compile(r'IF\((?P<cond>.*?),(?P<arg1>.*?),(?P<arg2>.*?)\)')
+        extract_regex = re.compile(r'IF\((?P<cond>.*),(?P<arg1>.*),(?P<arg2>.*)\)')
         match = re.search(extract_regex, query)
         while match:
             repl_string = 'CASE WHEN {cond} THEN {arg1} ELSE {arg2} END'.format(
