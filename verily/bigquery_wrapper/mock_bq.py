@@ -33,8 +33,8 @@ if platform.sys.version_info.major == 2:
     from pysqlite2 import dbapi2 as sqlite3
 else:
     import sqlite3
-from verily.bigquery_wrapper.bq_base import (BQ_PATH_DELIMITER,
-                                             BigqueryBaseClient)
+from verily.bigquery_wrapper.bq_base import BQ_PATH_DELIMITER
+from verily.bigquery_wrapper.db_api_bq import Client as DbApiClient
 
 # SQLite only uses . to separate database and table, so we need a
 # different delimiter. It's pretty strict about what special characters it
@@ -48,11 +48,7 @@ TRUE_STR = 'True'
 FALSE_STR = 'False'
 
 
-# Pylint thinks this is an abstract class because it throws NotImplementedErrors.
-# The warning is disabled because in this case those errors indicate that those methods
-# are just difficult or impossible to mock.
-# pylint: disable=R0921
-class Client(BigqueryBaseClient):
+class Client(DbApiClient):
     """Stores pointers to a mock BigQuery project, backed by an in-memory
     sqlite database instead.
 
@@ -69,11 +65,9 @@ class Client(BigqueryBaseClient):
                  print_before_and_after=False):
         # SQLite does not allow dashes in table paths.
         formatted_project_id = project_id.replace('-', '_')
-        super(Client, self).__init__(formatted_project_id, default_dataset, maximum_billing_tier)
-
         # Connect to an in-memory database path.
-        self.conn = sqlite3.connect(':memory:')
-        self.cursor = self.conn.cursor()
+        super(Client, self).__init__(sqlite3.connect(':memory:'), formatted_project_id,
+                                     default_dataset, maximum_billing_tier)
 
         # We use dictionaries to simulate the project/dataset/table structure present in BQ.
         # Mostly these will serve as checks in tests to make sure that a project and dataset
@@ -89,16 +83,7 @@ class Client(BigqueryBaseClient):
     def get_delimiter(self):
         return MOCK_DELIMITER
 
-    def _convert_to_mock_path(self, table_path):
-        """
-        Converts a table path from being delimited with BQ_PATH_DELIMITER to MOCK_DELIMITER.
-        """
-        table_project, dataset_id, table_name = self.parse_table_path(table_path,
-                                                                      delimiter=BQ_PATH_DELIMITER)
-        return self.path(table_name, dataset_id, table_project)
-
-    @staticmethod
-    def _bq_type_to_sqlite_type(typename):
+    def _bq_type_to_db_type(self, typename):
         """ Maps BQ types to SQLite types. One limitation of this class is that there's not a 1:1
         mapping, but this will cover most use cases."""
         if typename in ['FLOAT', 'FLOAT64']:
@@ -109,8 +94,7 @@ class Client(BigqueryBaseClient):
         # Strings and timestamps will be treated as text.
         return 'TEXT'
 
-    @staticmethod
-    def _sqlite_type_to_bq_type(typename, sample=None):
+    def _db_type_to_bq_type(self, typename, sample=None):
         """ Maps SQLite types to BQ types. One limitation of this class is that there's not a 1:1
         mapping, but this will cover most use cases. Passing in a sample gives it more information
         to make a better guess. """
@@ -131,14 +115,11 @@ class Client(BigqueryBaseClient):
         # Likely the only case here that will happen in practice is for INTEGER to be returned.
         return typename
 
-    def _get_column_names_in_result(self, query):
-        """ Returns a list of the column names of the rows the query will return. """
-        self.cursor.execute(self._reformat_query(query))
-        return [x[0] for x in self.cursor.description]
-
     def _create_table(self, standardized_path, schema_fields=None, schema_string=None):
-        """Creates a table in SQLite. Adds its path to the appropriate mappings.
-        SQLite3 requires a schema string for table creation. If one isn't passed in, this
+        """Creates a table.
+
+        Adds its path to the appropriate mappings.
+        The DB API requires a schema string for table creation. If one isn't passed in, this
         function will use a dummy schema to create the table.
 
         Args:
@@ -146,7 +127,7 @@ class Client(BigqueryBaseClient):
                 the mock delimiter (since this is a private function).
             schema_fields: A list of SchemaFields descrbing the table. If both schema_fields
                 and schema_string are present, schema_fields will take precedence.
-            schema_string: A SQLite3 string describing the schema.
+            schema_string: A string describing the schema.
         Raises:
             RuntimeError: if it looks like the project or dataset haven't been created yet.
         """
@@ -167,62 +148,7 @@ class Client(BigqueryBaseClient):
             raise RuntimeError(project + " not in known projects." +
                                "Are you using the right project?")
 
-        if schema_fields is not None:
-            for field in schema_fields:
-                if field.mode == 'REPEATED':
-                    raise RuntimeError('Mock BigQuery does not support repeated fields. Please use '
-                                       'real BigQuery.')
-            schema_list = [
-                x.name + ' ' + self._bq_type_to_sqlite_type(x.field_type) for x in schema_fields]
-            create_query = 'CREATE TABLE ' + standardized_path + '(' + ','.join(schema_list) + ')'
-        elif schema_string is not None:
-            create_query = 'CREATE TABLE ' + standardized_path + ' ' + schema_string
-        else:
-            create_query = 'CREATE TABLE ' + standardized_path + '(dummy_field)'
-
-        self.cursor.execute(create_query)
-        self.conn.commit()
-
-    def _insert_list_into_table(self, table_path, data_list):
-        """ Inserts a list of rows into a SQLite3 table.
-
-        Args:
-            table_path: The path to the table to insert the data. The table path should already have
-                 real delimiters replaced with the mock delimiter since this is a private function.
-            query_results: A list of tuples (or lists) representing the rows of data to be inserted.
-        """
-        # If there's no data to insert, just return.
-        if len(data_list) == 0:
-            return
-
-        # Only insert rows with non-zero length.
-        for row in [x for x in self._escape_row(data_list) if len(x)]:
-            values_string = '(' + ','.join(row) + ')'
-            query = 'INSERT INTO {} VALUES {}'.format(table_path, values_string)
-
-            try:
-                self.cursor.execute(query)
-            except Exception as e:
-                raise RuntimeError(e, ' '.join(query.split()))
-
-    @staticmethod
-    def _escape_row(data_list):
-        """ For returned results in the query, anything that's string-like needs to be enclosed
-        in single quotes before it makes it into the insert query, and everything needs to be
-        a string so the list join will work right. Nones are converted to NULLs, and single quotes
-        inside the field itself are converted to double quotes.
-        """
-        new_data_list = []
-        for row in data_list:
-            row_list = []
-            for col in row:
-                if col is None:
-                    col = 'NULL'
-                elif type(col) not in [int, float]:
-                    col = '\'' + str(col).replace('\'', '"') + '\''
-                row_list.append(str(col))
-            new_data_list.append(row_list)
-        return new_data_list
+        super(Client, self)._create_table(standardized_path, schema_fields, schema_string)
 
     def _reformat_query(self, query):
         """Does a variety of transformations to reinterpret a BigQuery into a SQLite executable
@@ -425,31 +351,8 @@ class Client(BigqueryBaseClient):
             match = re.search(extract_regex, query)
         return query
 
-    def get_query_results(self, query, use_legacy_sql=False, max_wait_secs=None):
-        # type: (str, Optional[Bool], Optional[int]) -> List[Tuple[Any]]
-        """Returns a list of rows, each of which is a tuple of values.
-
-        Args:
-            query: A string with a complete SQL query.
-            max_results: Maximum number of results to return.
-            use_legacy_sql: If set, will raise a RuntimeError.
-            max_wait_secs: Unused in this implementation
-        Returns:
-            A list of tuples of values.
-        Raises:
-            RuntimeError if use_legacy_sql is true.
-        """
-
-        if use_legacy_sql:
-            raise RuntimeError("Legacy SQL is disallowed for this mock.")
-
-        rows = []
-        for row in self.cursor.execute(self._reformat_query(query)):
-            rows.append(tuple(Client._reformat_results(row)))
-        return rows
-
-    @staticmethod
-    def _reformat_results(result_row):
+    def _reformat_results(self, result_row):
+        """See parent class for docstring."""
         reformatted_row = []
         for item in result_row:
             if item == 'None':
@@ -458,86 +361,8 @@ class Client(BigqueryBaseClient):
                 reformatted_row.append(item)
         return reformatted_row
 
-    def create_table_from_query(self,
-                                query,  # type: str
-                                table_path,  # type: str
-                                write_disposition='WRITE_EMPTY',  # type: Optional[str]
-                                use_legacy_sql=False,  # type: Optional[bool]
-                                max_wait_secs=None,  # type: Optional[int]
-                                expected_schema=None  # type: Optional[List[SchemaField]]
-                                ):
-        # type: (...) -> None
-        """Creates a table in SQLite3 from a specified query.
-        SQLite3 requires a schema to create a table. We can't derive the schema from
-        returned query results, so we make something up with the right number of columns
-        if we get any results at all. If there are no query results we just add a single column.
-        If a test heavily relies on column names or correct schemas, it should use
-        CreateTablesFromDict instead.
-
-        Args:
-            query: The query to run.
-            table_path: The path to the table (in the client's project) to write
-                the results to.
-            write_disposition: Unused in this implementation
-            use_legacy_sql: Should always be set to False; legacy SQL is disallowed in this mock.
-            max_wait_sec: Unused in this implementation
-            expected_schema: The expected schema of the resulting table (only required for mocking).
-        Raises:
-            RuntimeError if use_legacy_sql is true.
-        """
-
-        mock_path = self._convert_to_mock_path(table_path)
-
-        if use_legacy_sql:
-            raise RuntimeError("Legacy SQL is disallowed for this mock.")
-
-        if write_disposition not in ['WRITE_TRUNCATE', 'WRITE_APPEND', 'WRITE_EMPTY']:
-            raise ValueError('write_disposition must be one of WRITE_TRUNCATE, '
-                             'WRITE_APPEND, or WRITE_EMPTY')
-
-        query_results = self.get_query_results(query)
-
-        # Create a schema based on the results returned. Even if the query has no results,
-        # SQLite still knows what columns should be there.
-        schema_fields, schema_string = None, None
-        column_names = self._get_column_names_in_result(query)
-        if expected_schema is not None:
-            if len(expected_schema) != len(column_names):
-                raise RuntimeError("The schema doesn't have the same length as the result columns.")
-            for i in range(len(expected_schema)):
-                if expected_schema[i].name != column_names[i]:
-                    raise RuntimeError("The schema has a mismatching column name.")
-            # No schema type check because types in SQLite are much different and more ambiguous
-            # than types in Bigquery.
-        else:
-            schema_string = '(' + ','.join(column_names) + ')'
-
-        table_exists = self.parse_table_path(mock_path)[2] in self.tables(self.default_dataset_id)
-        if table_exists:
-            if write_disposition == 'WRITE_EMPTY':
-                raise RuntimeError(
-                    'Table {} already exists and write_disposition is WRITE_EMPTY.'.format(
-                        mock_path))
-            elif write_disposition == 'WRITE_TRUNCATE':
-                self.delete_table_by_name(table_path)
-                self._create_table(mock_path, schema_fields=expected_schema,
-                                   schema_string=schema_string)
-        else:
-            self._create_table(mock_path, schema_fields=expected_schema,
-                               schema_string=schema_string)
-
-        if query_results:
-            results = [list(itm) for itm in query_results]
-            if expected_schema is not None:
-                internal_rep = self._cast_to_correct_internal_representation(
-                    results, expected_schema)
-                self._insert_list_into_table(mock_path, internal_rep)
-            else:
-                self._insert_list_into_table(mock_path, results)
-
-    @staticmethod
-    def _cast_to_correct_internal_representation(query_results, expected_schema):
-        """Turns types into correct internal representation, i.e., 0 -> FALSE for booleans.
+    def _cast_to_correct_internal_representation(self, query_results, expected_schema):
+        """Turns types into correct internal representation, e.g., 0 -> FALSE for booleans.
 
         Args:
             query_results: List of list of results
@@ -644,13 +469,44 @@ class Client(BigqueryBaseClient):
             table_path: A string of the form '<dataset id>.<table name>' or
                 '<project id>.<dataset_id>.<table_name>'
         """
+        super(Client, self).delete_table_by_name(table_path)
         _, dataset, table = self.parse_table_path(table_path, delimiter=BQ_PATH_DELIMITER)
-        standardized_path = self._convert_to_mock_path(table_path)
-
-        self.cursor.execute('DROP TABLE ' + standardized_path)
-        self.conn.commit()
-
         self.table_map[dataset].remove(table)
+
+    def get_schema(self, dataset_id, table_name, project_id=None):
+        # type: (str, str, Optional[str]) -> List[SchemaField]
+        """Returns the schema of a table. Note that due to the imperfect mapping
+        of SQLiteTypes to BQ types, these schemas won't be perfect. Anything relying heavily
+        on correct schemas should use the real BigQuery client.
+
+        Args:
+            dataset_id: The dataset to query.
+            table_name: The name of the table.
+            project_id: The project ID of the table.
+        Returns:
+            A list of SchemaFields representing the schema.
+        """
+        # schema rows are in the format (order, name, type, ...)
+        standardized_path = self.path(table_name, dataset_id, project_id,
+                                      delimiter=MOCK_DELIMITER)
+        # 'pragma' is SQLite's equivalent to DESCRIBE TABLE
+        pragma_query = 'pragma table_info(\'' + standardized_path + '\')'
+        single_row_query = 'SELECT * FROM ' + standardized_path + ' LIMIT 1'
+
+        single_row = self.conn.execute(single_row_query).fetchall()
+        schema = self.conn.execute(pragma_query).fetchall()
+
+        returned_schema = []
+        for i in range(len(schema)):
+            row_name = schema[i][1]
+            if len(single_row) > 0:
+                row_type = self._db_type_to_bq_type(schema[i][2], sample=single_row[0][i])
+            else:
+                row_type = self._db_type_to_bq_type(schema[i][2])
+            # Repeated fields are not supported in mock BigQuery so we always set the mode
+            # to nullable.
+            returned_schema.append(SchemaField(row_name, row_type, mode='NULLABLE'))
+        return returned_schema
 
     def dataset_exists_with_name(self, dataset_name):
         # type: (str) -> bool
@@ -695,41 +551,6 @@ class Client(BigqueryBaseClient):
 
         return table_ids
 
-    def get_schema(self, dataset_id, table_name, project_id=None):
-        # type: (str, str, Optional[str]) -> List[SchemaField]
-        """Returns the schema of a table. Note that due to the imperfect mapping
-        of SQLiteTypes to BQ types, these schemas won't be perfect. Anything relying heavily
-        on correct schemas should use the real BigQuery client.
-
-        Args:
-            dataset_id: The dataset to query.
-            table_name: The name of the table.
-            project_id: The project ID of the table.
-        Returns:
-            A list of SchemaFields representing the schema.
-        """
-        # schema rows are in the format (order, name, type, ...)
-        standardized_path = self.path(table_name, dataset_id, project_id,
-                                      delimiter=MOCK_DELIMITER)
-        # 'pragma' is SQLite's equivalent to DESCRIBE TABLE
-        pragma_query = 'pragma table_info(\'' + standardized_path + '\')'
-        single_row_query = 'SELECT * FROM ' + standardized_path + ' LIMIT 1'
-
-        single_row = self.conn.execute(single_row_query).fetchall()
-        schema = self.conn.execute(pragma_query).fetchall()
-
-        returned_schema = []
-        for i in range(len(schema)):
-            row_name = schema[i][1]
-            if len(single_row) > 0:
-                row_type = self._sqlite_type_to_bq_type(schema[i][2], sample=single_row[0][i])
-            else:
-                row_type = self._sqlite_type_to_bq_type(schema[i][2])
-            # Repeated fields are not supported in mock BigQuery so we always set the mode
-            # to nullable.
-            returned_schema.append(SchemaField(row_name, row_type, mode='NULLABLE'))
-        return returned_schema
-
     def get_datasets(self):
         # type: (None) -> List[str]
         """Returns a list of dataset ids in the current project.
@@ -738,83 +559,6 @@ class Client(BigqueryBaseClient):
           A list of dataset ids/names (strings).
         """
         return self.project_map[self.project_id]
-
-    def populate_table(self, table_path, schema, data=[], make_immediately_available=False,
-                       replace_existing_table=False):
-        # type: (str, List[SchemaField], Optional[List[Any]], Optional[bool], Optional[bool]) -> None
-        """Creates a table and populates it with a list of rows.
-
-        If make_immediately_available is False, the table will be created using streaming inserts.
-        Note that streaming inserts are immediately available for querying, but not for exporting or
-        copying, so if you need that capability you should set make_immediately_available to True.
-        https://cloud.google.com/bigquery/streaming-data-into-bigquery
-
-        If the table is already created, it will raise a RuntimeError, unless replace_existing_table
-        is True.
-
-        Args:
-            table_path: A string of the form '<dataset id>.<table name>'
-                or '<project id>.<dataset id>.<table name>'.
-            schema: A list of SchemaFields to represent the table's schema.
-            data: A list of rows, each of which corresponds to a row to insert into the table.
-            make_immediately_available: If False, the table won't immediately be available for
-                copying or exporting, but will be available for querying. If True, after this
-                operation returns, it will be available for copying and exporting too.
-            replace_existing_table: If set to True, the table at table_path will be deleted and
-                recreated if it's already present.
-
-        Raises:
-            RuntimeError if the table at table_path is already there and replace_existing_table
-                is False
-        """
-        _, dataset, table_name = self.parse_table_path(table_path,
-                                                       delimiter=BQ_PATH_DELIMITER)
-
-        tables_in_dataset = self.table_map[dataset]
-
-        schema_field_list = [x.name + ' ' + self._bq_type_to_sqlite_type(x.field_type)
-                             for x in schema]
-        schema = '(' + ', '.join(schema_field_list) + ')'
-
-        if table_name in tables_in_dataset:
-            if replace_existing_table:
-                self.delete_table_by_name(table_path)
-            else:
-                raise RuntimeError('The table {} already exists.'.format(table_path))
-
-        table_path = self._convert_to_mock_path(table_path)
-
-        self._create_table(table_path, schema_string=schema)
-        self._insert_list_into_table(table_path, data)
-
-    def append_rows(self, table_path, data, schema=None):
-        # type: (str, List[Tuple[Any]], Optional[List[SchemaField]]) -> None
-        """Appends the rows contained in data to the table at table_path. This function assumes
-        the table itself is already created.
-
-        Args:
-            table_path: A string of the form '<dataset id>.<table name>'.
-            columns: A list of pairs (<column name>, <value type>).
-            data: A list of rows, each of which is a list of values.
-
-        Raises:
-            RuntimeError: if the schema passed in as columns doesn't match the schema of the
-                already-created table represented by table_path
-        """
-        table_project, dataset_id, table_name = self.parse_table_path(table_path,
-                                                                      delimiter=BQ_PATH_DELIMITER)
-        table_path = self._convert_to_mock_path(table_path)
-
-        if table_name not in self.tables(dataset_id):
-            raise RuntimeError("The table " + table_name + " doesn't exist.")
-        if schema is not None:
-            current_schema = self.get_schema(dataset_id, table_name, project_id=table_project)
-            schema_diffs = BigqueryBaseClient.list_schema_differences(current_schema, schema)
-            if schema_diffs:
-                raise RuntimeError("The incoming schema doesn't match "
-                                   "the existing table's schema: {}"
-                                   .format('\n'.join(schema_diffs)))
-        self._insert_list_into_table(table_path, data)
 
     def copy_table(self, source_table_path,  # type: str
                    destination_table_name,  # type: str
@@ -863,94 +607,7 @@ class Client(BigqueryBaseClient):
                                    .format(destination_table_name, destination_dataset))
 
         self.create_table_from_query('SELECT * FROM `{}`'.format(
-                self._convert_to_mock_path(source_table_path)),
+                self._convert_to_other_db_path(source_table_path)),
                 self.path(destination_table_name, destination_dataset, destination_project,
                           delimiter=BQ_PATH_DELIMITER))
 
-    def dataset_exists(self,
-                       dataset  # type: Dataset, DatasetReference
-                       ):
-        # type: (...) -> bool
-        """Checks if a dataset exists.
-
-        Args:
-            dataset: The BQ dataset object to check.
-        """
-        raise NotImplementedError('dataset_exists is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
-
-    def table_exists(self,
-                     table  # type: TableReference, Table
-                     ):
-        # type: (...) -> bool
-        """Checks if a table exists.
-
-        Args:
-            table: The TableReference or Table for the table to check whether it exists.
-        """
-        raise NotImplementedError('table_exists is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
-
-    def delete_dataset(self, dataset):
-        # type: (...) -> None
-        """Deletes a dataset.
-
-        Args:
-            dataset: The Dataset or DatasetReference to delete.
-        """
-        raise NotImplementedError('delete_dataset is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
-
-    def delete_table(self,
-                     table  # type: Table, TableReference
-                     ):
-        # type: (...) -> None
-        """Deletes a table.
-
-        Args:
-            table: The Table or TableReference to delete.
-        """
-        raise NotImplementedError('delete_table is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
-
-    def create_dataset(self,
-                       dataset  # type: DatasetReference, Dataset
-                       ):
-        # type: (...) -> None
-        """
-        Creates a dataset.
-
-        Args:
-            dataset: The Dataset object to create.
-        """
-        raise NotImplementedError('create_dataset is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
-
-    def create_table(self, table):
-        # type: (Table) -> None
-        """
-        Creates a table.
-
-        Args:
-            table: The Table or TableReference object to create. Note that if you pass a
-                TableReference the table will be created with no schema.
-        """
-        raise NotImplementedError('create_table is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
-
-    def fetch_data_from_table(self,
-                              table  # type: Table, TableReference
-                              ):
-        # type: (...) -> List[Tuple[Any]]
-        """
-        Fetches data from the given table.
-
-        Args:
-            table: The Table or TableReference object representing the table from which
-                to fetch data.
-
-        Returns:
-            List of tuples, where each tuple is a row of the table.
-        """
-        raise NotImplementedError('fetch_data_from_table is not implemented in mock_bq since'
-                                  'mock_bq does not use BigQuery objects.')
